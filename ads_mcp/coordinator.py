@@ -26,8 +26,25 @@ from fastmcp.server.auth.providers.google import GoogleProvider
 _CLIENT_ID = os.environ.get("GOOGLE_ADS_MCP_OAUTH_CLIENT_ID")
 _CLIENT_SECRET = os.environ.get("GOOGLE_ADS_MCP_OAUTH_CLIENT_SECRET")
 _BASE_URL = os.environ.get("GOOGLE_ADS_MCP_BASE_URL", "http://localhost:8080")
+_AUTH_TOKEN = os.environ.get("MCP_AUTH_TOKEN") or os.environ.get("GOOGLE_ADS_MCP_AUTH_TOKEN")
 
-if _CLIENT_ID and _CLIENT_SECRET:
+if _AUTH_TOKEN:
+    from fastmcp.server.auth import AuthProvider, AccessToken
+
+    class StaticBearerAuthProvider(AuthProvider):
+        """Simple and secure static bearer token authentication for remote MCP deployments."""
+
+        def __init__(self, token: str):
+            super().__init__()
+            self.expected_token = token
+
+        async def verify_token(self, token: str) -> AccessToken | None:
+            if token == self.expected_token:
+                return AccessToken(token=token, client_id="authorized-client", scopes=[])
+            return None
+
+    mcp = FastMCP("Google Ads Server", auth=StaticBearerAuthProvider(_AUTH_TOKEN))
+elif _CLIENT_ID and _CLIENT_SECRET:
     auth = GoogleProvider(
         client_id=_CLIENT_ID,
         client_secret=_CLIENT_SECRET,
