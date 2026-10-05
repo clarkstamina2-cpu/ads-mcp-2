@@ -30,6 +30,28 @@ _AUTH_TOKEN = os.environ.get("MCP_AUTH_TOKEN") or os.environ.get("GOOGLE_ADS_MCP
 
 if _AUTH_TOKEN:
     from fastmcp.server.auth import AuthProvider, AccessToken
+    from starlette.middleware import Middleware
+    from urllib.parse import parse_qs
+
+    class QueryTokenToHeaderMiddleware:
+        """Allows passing bearer token via ?token=... or ?api_key=... in URLs (e.g. Claude Web)."""
+
+        def __init__(self, app):
+            self.app = app
+
+        async def __call__(self, scope, receive, send):
+            if scope.get("type") == "http":
+                query_string = scope.get("query_string", b"").decode("utf-8")
+                if query_string:
+                    params = parse_qs(query_string)
+                    token = params.get("token", [None])[0] or params.get("api_key", [None])[0] or params.get("auth", [None])[0]
+                    if token:
+                        headers = dict(scope.get("headers", []))
+                        if b"authorization" not in headers:
+                            scope["headers"] = list(scope.get("headers", [])) + [
+                                (b"authorization", f"Bearer {token}".encode("utf-8"))
+                            ]
+            await self.app(scope, receive, send)
 
     class StaticBearerAuthProvider(AuthProvider):
         """Simple and secure static bearer token authentication for remote MCP deployments."""
@@ -42,6 +64,12 @@ if _AUTH_TOKEN:
             if token == self.expected_token:
                 return AccessToken(token=token, client_id="authorized-client", scopes=[])
             return None
+
+        def get_middleware(self) -> list:
+            return [
+                Middleware(QueryTokenToHeaderMiddleware),
+                *super().get_middleware(),
+            ]
 
     mcp = FastMCP("Google Ads Server", auth=StaticBearerAuthProvider(_AUTH_TOKEN))
 elif _CLIENT_ID and _CLIENT_SECRET:
