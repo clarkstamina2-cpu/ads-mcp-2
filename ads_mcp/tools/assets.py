@@ -21,6 +21,8 @@ from ads_mcp.tools.mutate_utils import (
     clean_customer_id,
     handle_googleads_exception,
     format_mutate_response,
+    get_enum_class,
+    get_enum_value,
 )
 
 
@@ -62,11 +64,19 @@ def create_sitelink_asset(
         if description2:
             asset.sitelink_asset.description2 = description2[:35]
 
-        response = asset_service.mutate_assets(
-            customer_id=cid,
-            operations=[op],
-            validate_only=validate_only,
-        )
+        if validate_only:
+            response = asset_service.mutate_assets(
+                request={
+                    "customer_id": cid,
+                    "operations": [op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = asset_service.mutate_assets(
+                customer_id=cid,
+                operations=[op],
+            )
 
         if validate_only:
             return format_mutate_response(
@@ -132,11 +142,19 @@ def create_callout_asset(
         asset = op.create
         asset.callout_asset.callout_text = callout_text[:25]
 
-        response = asset_service.mutate_assets(
-            customer_id=cid,
-            operations=[op],
-            validate_only=validate_only,
-        )
+        if validate_only:
+            response = asset_service.mutate_assets(
+                request={
+                    "customer_id": cid,
+                    "operations": [op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = asset_service.mutate_assets(
+                customer_id=cid,
+                operations=[op],
+            )
 
         if validate_only:
             return format_mutate_response(
@@ -204,11 +222,19 @@ def create_structured_snippet_asset(
         asset.structured_snippet_asset.header = header
         asset.structured_snippet_asset.values.extend([v[:25] for v in values])
 
-        response = asset_service.mutate_assets(
-            customer_id=cid,
-            operations=[op],
-            validate_only=validate_only,
-        )
+        if validate_only:
+            response = asset_service.mutate_assets(
+                request={
+                    "customer_id": cid,
+                    "operations": [op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = asset_service.mutate_assets(
+                customer_id=cid,
+                operations=[op],
+            )
 
         if validate_only:
             return format_mutate_response(
@@ -277,11 +303,19 @@ def create_call_asset(
         asset.call_asset.phone_number = phone_number
         asset.call_asset.country_code = country_code.upper()
 
-        response = asset_service.mutate_assets(
-            customer_id=cid,
-            operations=[op],
-            validate_only=validate_only,
-        )
+        if validate_only:
+            response = asset_service.mutate_assets(
+                request={
+                    "customer_id": cid,
+                    "operations": [op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = asset_service.mutate_assets(
+                customer_id=cid,
+                operations=[op],
+            )
 
         if validate_only:
             return format_mutate_response(
@@ -363,7 +397,7 @@ def link_asset_to_campaign(
         ca.asset = asset_rn
 
         field_type_enum = getattr(
-            client.enums.AssetFieldTypeEnum.AssetFieldType,
+            get_enum_class(client, "AssetFieldTypeEnum"),
             field_type.upper(),
             None,
         )
@@ -372,11 +406,19 @@ def link_asset_to_campaign(
 
         ca.field_type = field_type_enum
 
-        response = campaign_asset_service.mutate_campaign_assets(
-            customer_id=cid,
-            operations=[op],
-            validate_only=validate_only,
-        )
+        if validate_only:
+            response = campaign_asset_service.mutate_campaign_assets(
+                request={
+                    "customer_id": cid,
+                    "operations": [op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = campaign_asset_service.mutate_campaign_assets(
+                customer_id=cid,
+                operations=[op],
+            )
 
         results = response.results if not validate_only else [{"resource_name": f"customers/{cid}/campaignAssets/dry-run"}]
         return format_mutate_response(

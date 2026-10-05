@@ -21,6 +21,8 @@ from ads_mcp.tools.mutate_utils import (
     clean_customer_id,
     handle_googleads_exception,
     format_mutate_response,
+    get_enum_class,
+    get_enum_value,
 )
 
 
@@ -70,9 +72,9 @@ def create_responsive_search_ad(
 
         # Status
         status_enum = getattr(
-            client.enums.AdGroupAdStatusEnum.AdGroupAdStatus,
+            get_enum_class(client, "AdGroupAdStatusEnum"),
             status.upper(),
-            client.enums.AdGroupAdStatusEnum.AdGroupAdStatus.ENABLED,
+            get_enum_value(client, "AdGroupAdStatusEnum", "ENABLED"),
         )
         ad_group_ad.status = status_enum
 
@@ -95,7 +97,7 @@ def create_responsive_search_ad(
                 pin_str = h.get("pinned_field")
                 if pin_str:
                     pin_enum = getattr(
-                        client.enums.ServedAssetFieldTypeEnum.ServedAssetFieldType,
+                        get_enum_class(client, "ServedAssetFieldTypeEnum"),
                         pin_str.upper(),
                         None,
                     )
@@ -113,7 +115,7 @@ def create_responsive_search_ad(
                 pin_str = d.get("pinned_field")
                 if pin_str:
                     pin_enum = getattr(
-                        client.enums.ServedAssetFieldTypeEnum.ServedAssetFieldType,
+                        get_enum_class(client, "ServedAssetFieldTypeEnum"),
                         pin_str.upper(),
                         None,
                     )
@@ -121,11 +123,12 @@ def create_responsive_search_ad(
                         desc_asset.pinned_field = pin_enum
             ad_group_ad.ad.responsive_search_ad.descriptions.append(desc_asset)
 
-        response = ad_group_ad_service.mutate_ad_group_ads(
-            customer_id=cid,
-            operations=[op],
-            validate_only=validate_only,
-        )
+        request = utils.get_googleads_type("MutateAdGroupAdsRequest", customer_id=cid)
+        request.customer_id = cid
+        request.operations.append(op)
+        request.validate_only = validate_only
+
+        response = ad_group_ad_service.mutate_ad_group_ads(request=request)
 
         results = response.results if not validate_only else [{"resource_name": f"customers/{cid}/adGroupAds/dry-run"}]
         return format_mutate_response(
@@ -176,7 +179,7 @@ def update_ad_status(
         op = utils.get_googleads_type("AdGroupAdOperation", customer_id=cid)
         client = utils.get_googleads_client(login_customer_id=utils.get_login_customer_id_for_customer(cid))
 
-        enum_class = getattr(client.enums.AdGroupAdStatusEnum, "AdGroupAdStatus", client.enums.AdGroupAdStatusEnum)
+        enum_class = get_enum_class(client, "AdGroupAdStatusEnum")
         status_enum = getattr(enum_class, status.upper(), None)
         if not status_enum:
             raise ValueError(f"Invalid ad status: '{status}'. Choose PAUSED, ENABLED, or REMOVED.")
@@ -258,19 +261,27 @@ def create_pmax_asset_group(
         asset_group.final_urls.extend(final_urls)
 
         status_enum = getattr(
-            client.enums.AssetGroupStatusEnum.AssetGroupStatus,
+            get_enum_class(client, "AssetGroupStatusEnum"),
             status.upper(),
-            client.enums.AssetGroupStatusEnum.AssetGroupStatus.ENABLED,
+            get_enum_value(client, "AssetGroupStatusEnum", "ENABLED"),
         )
         asset_group.status = status_enum
 
         # Text assets directly or via AssetGroupAsset
         # We create the AssetGroup container first
-        response = asset_group_service.mutate_asset_groups(
-            customer_id=cid,
-            operations=[op],
-            validate_only=validate_only,
-        )
+        if validate_only:
+            response = asset_group_service.mutate_asset_groups(
+                request={
+                    "customer_id": cid,
+                    "operations": [op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = asset_group_service.mutate_asset_groups(
+                customer_id=cid,
+                operations=[op],
+            )
 
         results = response.results if not validate_only else [{"resource_name": f"customers/{cid}/assetGroups/dry-run"}]
         return format_mutate_response(

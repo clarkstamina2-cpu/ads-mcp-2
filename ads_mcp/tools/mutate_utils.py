@@ -134,3 +134,21 @@ def format_mutate_response(
     if extra:
         resp.update(extra)
     return resp
+
+
+def get_enum_class(client: Any, enum_name: str) -> Any:
+    """Safely retrieves an enum class from client.enums regardless of proto-plus unwrapping."""
+    raw = getattr(client.enums, enum_name, None)
+    if raw is None:
+        return None
+    inner = enum_name.removesuffix("Enum")
+    return getattr(raw, inner, raw)
+
+
+def get_enum_value(client: Any, enum_name: str, value_name: str, default: Any = None) -> Any:
+    """Safely retrieves an enum value from client.enums regardless of proto-plus unwrapping."""
+    enum_cls = get_enum_class(client, enum_name)
+    if enum_cls is None:
+        return default
+    return getattr(enum_cls, value_name, default)
+

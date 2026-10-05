@@ -63,7 +63,7 @@ def add_keywords(
             op = utils.get_googleads_type("AdGroupCriterionOperation", customer_id=cid)
             criterion = op.create
             criterion.ad_group = ad_group_rn
-            criterion.status = client.enums.AdGroupCriterionStatusEnum.AdGroupCriterionStatus.ENABLED
+            criterion.status = client.enums.AdGroupCriterionStatusEnum.ENABLED
 
             if isinstance(kw, str):
                 text = kw
@@ -79,9 +79,9 @@ def add_keywords(
                 continue
 
             match_enum = getattr(
-                client.enums.KeywordMatchTypeEnum.KeywordMatchType,
+                client.enums.KeywordMatchTypeEnum,
                 match_type_str.upper(),
-                client.enums.KeywordMatchTypeEnum.KeywordMatchType.BROAD,
+                client.enums.KeywordMatchTypeEnum.BROAD,
             )
             criterion.keyword.text = text
             criterion.keyword.match_type = match_enum
@@ -96,11 +96,19 @@ def add_keywords(
         if not operations:
             raise ValueError("No valid keywords provided to add.")
 
-        response = criterion_service.mutate_ad_group_criteria(
-            customer_id=cid,
-            operations=operations,
-            validate_only=validate_only,
-        )
+        if validate_only:
+            response = criterion_service.mutate_ad_group_criteria(
+                request={
+                    "customer_id": cid,
+                    "operations": operations,
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = criterion_service.mutate_ad_group_criteria(
+                customer_id=cid,
+                operations=operations,
+            )
 
         results = response.results if not validate_only else [{"resource_name": f"customers/{cid}/adGroupCriteria/dry-run"} for _ in operations]
         return format_mutate_response(
@@ -151,7 +159,7 @@ def update_keyword_status(
         client = utils.get_googleads_client(login_customer_id=utils.get_login_customer_id_for_customer(cid))
 
         status_enum = getattr(
-            client.enums.AdGroupCriterionStatusEnum.AdGroupCriterionStatus,
+            client.enums.AdGroupCriterionStatusEnum,
             status.upper(),
             None,
         )
@@ -163,11 +171,19 @@ def update_keyword_status(
         criterion.status = status_enum
         op.update_mask.paths.append("status")
 
-        response = criterion_service.mutate_ad_group_criteria(
-            customer_id=cid,
-            operations=[op],
-            validate_only=validate_only,
-        )
+        if validate_only:
+            response = criterion_service.mutate_ad_group_criteria(
+                request={
+                    "customer_id": cid,
+                    "operations": [op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = criterion_service.mutate_ad_group_criteria(
+                customer_id=cid,
+                operations=[op],
+            )
 
         results = response.results if not validate_only else [{"resource_name": resource_name}]
         return format_mutate_response(
@@ -222,11 +238,19 @@ def update_keyword_cpc_bid(
         criterion.cpc_bid_micros = cpc_micros
         op.update_mask.paths.append("cpc_bid_micros")
 
-        response = criterion_service.mutate_ad_group_criteria(
-            customer_id=cid,
-            operations=[op],
-            validate_only=validate_only,
-        )
+        if validate_only:
+            response = criterion_service.mutate_ad_group_criteria(
+                request={
+                    "customer_id": cid,
+                    "operations": [op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = criterion_service.mutate_ad_group_criteria(
+                customer_id=cid,
+                operations=[op],
+            )
 
         results = response.results if not validate_only else [{"resource_name": resource_name}]
         return format_mutate_response(
@@ -293,9 +317,9 @@ def add_negative_keywords_to_campaign(
                 continue
 
             match_enum = getattr(
-                client.enums.KeywordMatchTypeEnum.KeywordMatchType,
+                client.enums.KeywordMatchTypeEnum,
                 match_type_str.upper(),
-                client.enums.KeywordMatchTypeEnum.KeywordMatchType.BROAD,
+                client.enums.KeywordMatchTypeEnum.BROAD,
             )
             criterion.keyword.text = text
             criterion.keyword.match_type = match_enum
@@ -304,11 +328,19 @@ def add_negative_keywords_to_campaign(
         if not operations:
             raise ValueError("No valid negative keywords provided.")
 
-        response = campaign_criterion_service.mutate_campaign_criteria(
-            customer_id=cid,
-            operations=operations,
-            validate_only=validate_only,
-        )
+        if validate_only:
+            response = campaign_criterion_service.mutate_campaign_criteria(
+                request={
+                    "customer_id": cid,
+                    "operations": operations,
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = campaign_criterion_service.mutate_campaign_criteria(
+                customer_id=cid,
+                operations=operations,
+            )
 
         results = response.results if not validate_only else [{"resource_name": f"customers/{cid}/campaignCriteria/dry-run"} for _ in operations]
         return format_mutate_response(
@@ -373,9 +405,9 @@ def add_negative_keywords_to_ad_group(
                 continue
 
             match_enum = getattr(
-                client.enums.KeywordMatchTypeEnum.KeywordMatchType,
+                client.enums.KeywordMatchTypeEnum,
                 match_type_str.upper(),
-                client.enums.KeywordMatchTypeEnum.KeywordMatchType.BROAD,
+                client.enums.KeywordMatchTypeEnum.BROAD,
             )
             criterion.keyword.text = text
             criterion.keyword.match_type = match_enum
@@ -384,11 +416,19 @@ def add_negative_keywords_to_ad_group(
         if not operations:
             raise ValueError("No valid negative keywords provided.")
 
-        response = criterion_service.mutate_ad_group_criteria(
-            customer_id=cid,
-            operations=operations,
-            validate_only=validate_only,
-        )
+        if validate_only:
+            response = criterion_service.mutate_ad_group_criteria(
+                request={
+                    "customer_id": cid,
+                    "operations": operations,
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = criterion_service.mutate_ad_group_criteria(
+                customer_id=cid,
+                operations=operations,
+            )
 
         results = response.results if not validate_only else [{"resource_name": f"customers/{cid}/adGroupCriteria/dry-run"} for _ in operations]
         return format_mutate_response(
@@ -435,7 +475,7 @@ def create_negative_keyword_shared_set(
         set_op = utils.get_googleads_type("SharedSetOperation", customer_id=cid)
         shared_set = set_op.create
         shared_set.name = name
-        shared_set.type_ = client.enums.SharedSetTypeEnum.SharedSetType.NEGATIVE_KEYWORDS
+        shared_set.type_ = client.enums.SharedSetTypeEnum.NEGATIVE_KEYWORDS
 
         set_response = shared_set_service.mutate_shared_sets(
             customer_id=cid,
@@ -473,9 +513,9 @@ def create_negative_keyword_shared_set(
                     continue
 
                 match_enum = getattr(
-                    client.enums.KeywordMatchTypeEnum.KeywordMatchType,
+                    client.enums.KeywordMatchTypeEnum,
                     match_type_str.upper(),
-                    client.enums.KeywordMatchTypeEnum.KeywordMatchType.BROAD,
+                    client.enums.KeywordMatchTypeEnum.BROAD,
                 )
                 crit.keyword.text = text
                 crit.keyword.match_type = match_enum
@@ -543,11 +583,19 @@ def apply_negative_keyword_shared_set_to_campaign(
         css.campaign = campaign_rn
         css.shared_set = shared_set_rn
 
-        response = campaign_shared_set_service.mutate_campaign_shared_sets(
-            customer_id=cid,
-            operations=[op],
-            validate_only=validate_only,
-        )
+        if validate_only:
+            response = campaign_shared_set_service.mutate_campaign_shared_sets(
+                request={
+                    "customer_id": cid,
+                    "operations": [op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = campaign_shared_set_service.mutate_campaign_shared_sets(
+                customer_id=cid,
+                operations=[op],
+            )
 
         results = response.results if not validate_only else [{"resource_name": f"customers/{cid}/campaignSharedSets/dry-run"}]
         return format_mutate_response(

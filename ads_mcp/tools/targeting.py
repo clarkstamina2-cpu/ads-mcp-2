@@ -21,6 +21,8 @@ from ads_mcp.tools.mutate_utils import (
     clean_customer_id,
     handle_googleads_exception,
     format_mutate_response,
+    get_enum_class,
+    get_enum_value,
 )
 
 
@@ -73,11 +75,19 @@ def add_campaign_geo_targets(
         if not operations:
             raise ValueError("No geo target IDs provided.")
 
-        response = campaign_criterion_service.mutate_campaign_criteria(
-            customer_id=cid,
-            operations=operations,
-            validate_only=validate_only,
-        )
+        if validate_only:
+            response = campaign_criterion_service.mutate_campaign_criteria(
+                request={
+                    "customer_id": cid,
+                    "operations": operations,
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = campaign_criterion_service.mutate_campaign_criteria(
+                customer_id=cid,
+                operations=operations,
+            )
 
         results = response.results if not validate_only else [{"resource_name": f"customers/{cid}/campaignCriteria/dry-run"} for _ in operations]
         return format_mutate_response(
@@ -126,11 +136,19 @@ def remove_campaign_criterion(
         op = utils.get_googleads_type("CampaignCriterionOperation", customer_id=cid)
         op.remove = resource_name
 
-        response = campaign_criterion_service.mutate_campaign_criteria(
-            customer_id=cid,
-            operations=[op],
-            validate_only=validate_only,
-        )
+        if validate_only:
+            response = campaign_criterion_service.mutate_campaign_criteria(
+                request={
+                    "customer_id": cid,
+                    "operations": [op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = campaign_criterion_service.mutate_campaign_criteria(
+                customer_id=cid,
+                operations=[op],
+            )
 
         results = response.results if not validate_only else [{"resource_name": resource_name}]
         return format_mutate_response(
@@ -188,7 +206,7 @@ def set_campaign_ad_schedule(
             criterion.campaign = campaign_rn
 
             day_enum = getattr(
-                client.enums.DayOfWeekEnum.DayOfWeek,
+                get_enum_class(client, "DayOfWeekEnum"),
                 s.get("day_of_week", "").upper(),
                 None,
             )
@@ -196,14 +214,14 @@ def set_campaign_ad_schedule(
                 raise ValueError(f"Invalid day_of_week: '{s.get('day_of_week')}'.")
 
             start_min_enum = getattr(
-                client.enums.MinuteOfHourEnum.MinuteOfHour,
+                get_enum_class(client, "MinuteOfHourEnum"),
                 str(s.get("start_minute", "ZERO")).upper(),
-                client.enums.MinuteOfHourEnum.MinuteOfHour.ZERO,
+                get_enum_value(client, "MinuteOfHourEnum", "ZERO"),
             )
             end_min_enum = getattr(
-                client.enums.MinuteOfHourEnum.MinuteOfHour,
+                get_enum_class(client, "MinuteOfHourEnum"),
                 str(s.get("end_minute", "ZERO")).upper(),
-                client.enums.MinuteOfHourEnum.MinuteOfHour.ZERO,
+                get_enum_value(client, "MinuteOfHourEnum", "ZERO"),
             )
 
             criterion.ad_schedule.day_of_week = day_enum
@@ -220,11 +238,19 @@ def set_campaign_ad_schedule(
         if not operations:
             raise ValueError("No schedule items provided.")
 
-        response = campaign_criterion_service.mutate_campaign_criteria(
-            customer_id=cid,
-            operations=operations,
-            validate_only=validate_only,
-        )
+        if validate_only:
+            response = campaign_criterion_service.mutate_campaign_criteria(
+                request={
+                    "customer_id": cid,
+                    "operations": operations,
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = campaign_criterion_service.mutate_campaign_criteria(
+                customer_id=cid,
+                operations=operations,
+            )
 
         results = response.results if not validate_only else [{"resource_name": f"customers/{cid}/campaignCriteria/dry-run"} for _ in operations]
         return format_mutate_response(
@@ -291,7 +317,7 @@ def set_campaign_device_bid_modifiers(
             op = utils.get_googleads_type("CampaignBidModifierOperation", customer_id=cid)
             cbm = op.create
             cbm.campaign = campaign_rn
-            device_enum = getattr(client.enums.DeviceEnum.Device, device_name)
+            device_enum = getattr(get_enum_class(client, "DeviceEnum"), device_name)
             cbm.device.type_ = device_enum
             cbm.bid_modifier = float(modifier)
             operations.append(op)
@@ -299,11 +325,19 @@ def set_campaign_device_bid_modifiers(
         if not operations:
             raise ValueError("At least one device modifier (desktop, mobile, or tablet) must be specified.")
 
-        response = bid_modifier_service.mutate_campaign_bid_modifiers(
-            customer_id=cid,
-            operations=operations,
-            validate_only=validate_only,
-        )
+        if validate_only:
+            response = bid_modifier_service.mutate_campaign_bid_modifiers(
+                request={
+                    "customer_id": cid,
+                    "operations": operations,
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = bid_modifier_service.mutate_campaign_bid_modifiers(
+                customer_id=cid,
+                operations=operations,
+            )
 
         results = response.results if not validate_only else [{"resource_name": f"customers/{cid}/campaignBidModifiers/dry-run"} for _ in operations]
         return format_mutate_response(

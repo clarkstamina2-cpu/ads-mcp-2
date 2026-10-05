@@ -23,6 +23,8 @@ from ads_mcp.tools.mutate_utils import (
     micros_to_currency,
     handle_googleads_exception,
     format_mutate_response,
+    get_enum_class,
+    get_enum_value,
 )
 
 
@@ -61,15 +63,23 @@ def create_campaign_budget(
         budget.explicitly_shared = explicitly_shared
 
         client = utils.get_googleads_client(login_customer_id=utils.get_login_customer_id_for_customer(cid))
-        delivery_enum = getattr(client.enums.BudgetDeliveryMethodEnum.BudgetDeliveryMethod, delivery_method.upper(), None)
+        delivery_enum = getattr(get_enum_class(client, "BudgetDeliveryMethodEnum"), delivery_method.upper(), None)
         if delivery_enum:
             budget.delivery_method = delivery_enum
 
-        response = campaign_budget_service.mutate_campaign_budgets(
-            customer_id=cid,
-            operations=[budget_op],
-            validate_only=validate_only,
-        )
+        if validate_only:
+            response = campaign_budget_service.mutate_campaign_budgets(
+                request={
+                    "customer_id": cid,
+                    "operations": [budget_op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = campaign_budget_service.mutate_campaign_budgets(
+                customer_id=cid,
+                operations=[budget_op],
+            )
 
         results = response.results if not validate_only else [{"resource_name": f"customers/{cid}/campaignBudgets/dry-run"}]
         return format_mutate_response(
@@ -126,11 +136,19 @@ def update_campaign_budget(
         # Set field mask
         budget_op.update_mask.paths.append("amount_micros")
 
-        response = campaign_budget_service.mutate_campaign_budgets(
-            customer_id=cid,
-            operations=[budget_op],
-            validate_only=validate_only,
-        )
+        if validate_only:
+            response = campaign_budget_service.mutate_campaign_budgets(
+                request={
+                    "customer_id": cid,
+                    "operations": [budget_op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = campaign_budget_service.mutate_campaign_budgets(
+                customer_id=cid,
+                operations=[budget_op],
+            )
 
         results = response.results if not validate_only else [{"resource_name": resource_name}]
         return format_mutate_response(

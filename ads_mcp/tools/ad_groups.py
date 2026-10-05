@@ -23,6 +23,8 @@ from ads_mcp.tools.mutate_utils import (
     micros_to_currency,
     handle_googleads_exception,
     format_mutate_response,
+    get_enum_class,
+    get_enum_value,
 )
 
 
@@ -71,17 +73,17 @@ def create_ad_group(
 
         # Type
         type_enum = getattr(
-            client.enums.AdGroupTypeEnum.AdGroupType,
+            get_enum_class(client, "AdGroupTypeEnum"),
             ad_group_type.upper(),
-            client.enums.AdGroupTypeEnum.AdGroupType.SEARCH_STANDARD,
+            get_enum_value(client, "AdGroupTypeEnum", "SEARCH_STANDARD"),
         )
         ad_group.type_ = type_enum
 
         # Status
         status_enum = getattr(
-            client.enums.AdGroupStatusEnum.AdGroupStatus,
+            get_enum_class(client, "AdGroupStatusEnum"),
             status.upper(),
-            client.enums.AdGroupStatusEnum.AdGroupStatus.ENABLED,
+            get_enum_value(client, "AdGroupStatusEnum", "ENABLED"),
         )
         ad_group.status = status_enum
 
@@ -91,11 +93,19 @@ def create_ad_group(
         if target_cpa is not None:
             ad_group.target_cpa_micros = parse_money_to_micros(target_cpa)
 
-        response = ad_group_service.mutate_ad_groups(
-            customer_id=cid,
-            operations=[ad_group_op],
-            validate_only=validate_only,
-        )
+        if validate_only:
+            response = ad_group_service.mutate_ad_groups(
+                request={
+                    "customer_id": cid,
+                    "operations": [ad_group_op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = ad_group_service.mutate_ad_groups(
+                customer_id=cid,
+                operations=[ad_group_op],
+            )
 
         results = response.results if not validate_only else [{"resource_name": f"customers/{cid}/adGroups/dry-run"}]
         return format_mutate_response(
@@ -144,7 +154,7 @@ def update_ad_group_status(
         client = utils.get_googleads_client(login_customer_id=utils.get_login_customer_id_for_customer(cid))
 
         status_enum = getattr(
-            client.enums.AdGroupStatusEnum.AdGroupStatus,
+            get_enum_class(client, "AdGroupStatusEnum"),
             status.upper(),
             None,
         )
@@ -156,11 +166,19 @@ def update_ad_group_status(
         ad_group.status = status_enum
         ad_group_op.update_mask.paths.append("status")
 
-        response = ad_group_service.mutate_ad_groups(
-            customer_id=cid,
-            operations=[ad_group_op],
-            validate_only=validate_only,
-        )
+        if validate_only:
+            response = ad_group_service.mutate_ad_groups(
+                request={
+                    "customer_id": cid,
+                    "operations": [ad_group_op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = ad_group_service.mutate_ad_groups(
+                customer_id=cid,
+                operations=[ad_group_op],
+            )
 
         results = response.results if not validate_only else [{"resource_name": resource_name}]
         return format_mutate_response(
@@ -213,11 +231,19 @@ def update_ad_group_cpc_bid(
         ad_group.cpc_bid_micros = cpc_micros
         ad_group_op.update_mask.paths.append("cpc_bid_micros")
 
-        response = ad_group_service.mutate_ad_groups(
-            customer_id=cid,
-            operations=[ad_group_op],
-            validate_only=validate_only,
-        )
+        if validate_only:
+            response = ad_group_service.mutate_ad_groups(
+                request={
+                    "customer_id": cid,
+                    "operations": [ad_group_op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = ad_group_service.mutate_ad_groups(
+                customer_id=cid,
+                operations=[ad_group_op],
+            )
 
         results = response.results if not validate_only else [{"resource_name": resource_name}]
         return format_mutate_response(
@@ -269,11 +295,19 @@ def update_ad_group_name(
         ad_group.name = name
         ad_group_op.update_mask.paths.append("name")
 
-        response = ad_group_service.mutate_ad_groups(
-            customer_id=cid,
-            operations=[ad_group_op],
-            validate_only=validate_only,
-        )
+        if validate_only:
+            response = ad_group_service.mutate_ad_groups(
+                request={
+                    "customer_id": cid,
+                    "operations": [ad_group_op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = ad_group_service.mutate_ad_groups(
+                customer_id=cid,
+                operations=[ad_group_op],
+            )
 
         results = response.results if not validate_only else [{"resource_name": resource_name}]
         return format_mutate_response(

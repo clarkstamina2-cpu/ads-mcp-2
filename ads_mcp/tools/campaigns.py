@@ -23,6 +23,8 @@ from ads_mcp.tools.mutate_utils import (
     micros_to_currency,
     handle_googleads_exception,
     format_mutate_response,
+    get_enum_class,
+    get_enum_value,
 )
 
 
@@ -89,17 +91,17 @@ def create_campaign(
 
         # Channel type
         channel_enum = getattr(
-            client.enums.AdvertisingChannelTypeEnum.AdvertisingChannelType,
+            get_enum_class(client, "AdvertisingChannelTypeEnum"),
             advertising_channel_type.upper(),
-            client.enums.AdvertisingChannelTypeEnum.AdvertisingChannelType.SEARCH,
+            get_enum_value(client, "AdvertisingChannelTypeEnum", "SEARCH"),
         )
         campaign.advertising_channel_type = channel_enum
 
         # Status
         status_enum = getattr(
-            client.enums.CampaignStatusEnum.CampaignStatus,
+            get_enum_class(client, "CampaignStatusEnum"),
             status.upper(),
-            client.enums.CampaignStatusEnum.CampaignStatus.PAUSED,
+            get_enum_value(client, "CampaignStatusEnum", "PAUSED"),
         )
         campaign.status = status_enum
 
@@ -141,11 +143,19 @@ def create_campaign(
             else:
                 campaign.target_spend._pb.SetInParent()
 
-        response = campaign_service.mutate_campaigns(
-            customer_id=cid,
-            operations=[campaign_op],
-            validate_only=validate_only,
-        )
+        if validate_only:
+            response = campaign_service.mutate_campaigns(
+                request={
+                    "customer_id": cid,
+                    "operations": [campaign_op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = campaign_service.mutate_campaigns(
+                customer_id=cid,
+                operations=[campaign_op],
+            )
 
         results = response.results if not validate_only else [{"resource_name": f"customers/{cid}/campaigns/dry-run"}]
         return format_mutate_response(
@@ -195,7 +205,7 @@ def update_campaign_status(
         client = utils.get_googleads_client(login_customer_id=utils.get_login_customer_id_for_customer(cid))
 
         status_enum = getattr(
-            client.enums.CampaignStatusEnum.CampaignStatus,
+            get_enum_class(client, "CampaignStatusEnum"),
             status.upper(),
             None,
         )
@@ -207,11 +217,19 @@ def update_campaign_status(
         campaign.status = status_enum
         campaign_op.update_mask.paths.append("status")
 
-        response = campaign_service.mutate_campaigns(
-            customer_id=cid,
-            operations=[campaign_op],
-            validate_only=validate_only,
-        )
+        if validate_only:
+            response = campaign_service.mutate_campaigns(
+                request={
+                    "customer_id": cid,
+                    "operations": [campaign_op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = campaign_service.mutate_campaigns(
+                customer_id=cid,
+                operations=[campaign_op],
+            )
 
         results = response.results if not validate_only else [{"resource_name": resource_name}]
         return format_mutate_response(
@@ -303,11 +321,19 @@ def update_campaign_bidding_strategy(
                 campaign.target_spend._pb.SetInParent()
                 campaign_op.update_mask.paths.append("target_spend")
 
-        response = campaign_service.mutate_campaigns(
-            customer_id=cid,
-            operations=[campaign_op],
-            validate_only=validate_only,
-        )
+        if validate_only:
+            response = campaign_service.mutate_campaigns(
+                request={
+                    "customer_id": cid,
+                    "operations": [campaign_op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = campaign_service.mutate_campaigns(
+                customer_id=cid,
+                operations=[campaign_op],
+            )
 
         results = response.results if not validate_only else [{"resource_name": resource_name}]
         return format_mutate_response(
@@ -364,11 +390,19 @@ def update_campaign_dates(
             campaign.end_date = end_date.replace("-", "")
             campaign_op.update_mask.paths.append("end_date")
 
-        response = campaign_service.mutate_campaigns(
-            customer_id=cid,
-            operations=[campaign_op],
-            validate_only=validate_only,
-        )
+        if validate_only:
+            response = campaign_service.mutate_campaigns(
+                request={
+                    "customer_id": cid,
+                    "operations": [campaign_op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = campaign_service.mutate_campaigns(
+                customer_id=cid,
+                operations=[campaign_op],
+            )
 
         results = response.results if not validate_only else [{"resource_name": resource_name}]
         return format_mutate_response(
@@ -419,11 +453,19 @@ def update_campaign_name(
         campaign.name = name
         campaign_op.update_mask.paths.append("name")
 
-        response = campaign_service.mutate_campaigns(
-            customer_id=cid,
-            operations=[campaign_op],
-            validate_only=validate_only,
-        )
+        if validate_only:
+            response = campaign_service.mutate_campaigns(
+                request={
+                    "customer_id": cid,
+                    "operations": [campaign_op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = campaign_service.mutate_campaigns(
+                customer_id=cid,
+                operations=[campaign_op],
+            )
 
         results = response.results if not validate_only else [{"resource_name": resource_name}]
         return format_mutate_response(
