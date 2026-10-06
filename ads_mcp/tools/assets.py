@@ -402,7 +402,7 @@ def link_asset_to_campaign(
             None,
         )
         if not field_type_enum:
-            raise ValueError(f"Invalid field_type: '{field_type}'. Valid types: SITELINK, CALLOUT, STRUCTURED_SNIPPET, CALL, PROMOTION, PRICE, LEAD_FORM.")
+            raise ValueError(f"Invalid field_type: '{field_type}'. Valid types: SITELINK, CALLOUT, STRUCTURED_SNIPPET, CALL, PROMOTION, PRICE, LEAD_FORM, BUSINESS_NAME, BUSINESS_LOGO, AD_IMAGE, BUSINESS_MESSAGE.")
 
         ca.field_type = field_type_enum
 
@@ -434,3 +434,246 @@ def link_asset_to_campaign(
         )
     except Exception as ex:
         raise handle_googleads_exception(ex)
+
+
+@mcp.tool()
+def create_business_name_asset(
+    customer_id: str,
+    business_name: str,
+    campaign_id: Optional[Union[str, int]] = None,
+    validate_only: bool = False,
+) -> Dict[str, Any]:
+    """Creates a Business Name asset (TextAsset) and optionally links it to a campaign.
+
+    NOTE: The Google Ads account must be enrolled/approved in the Advertiser Verification Program
+    to display Business Name assets in Search ads.
+
+    Args:
+        customer_id: The Google Ads customer ID.
+        business_name: The company/business name (up to 25 characters).
+        campaign_id: Optional campaign ID to link this asset to immediately.
+        validate_only: If True, only validates without applying.
+
+    Returns:
+        Dict with success status and created asset resource name.
+    """
+    cid = clean_customer_id(customer_id)
+    try:
+        asset_service = utils.get_googleads_service("AssetService", customer_id=cid)
+        client = utils.get_googleads_client(login_customer_id=utils.get_login_customer_id_for_customer(cid))
+
+        op = utils.get_googleads_type("AssetOperation", customer_id=cid)
+        asset = op.create
+        asset.name = f"Business Name - {business_name.strip()[:20]}"
+        asset.text_asset.text = business_name.strip()
+        asset.type_ = get_enum_value(client, "AssetTypeEnum", "TEXT")
+
+        if validate_only:
+            response = asset_service.mutate_assets(
+                request={
+                    "customer_id": cid,
+                    "operations": [op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = asset_service.mutate_assets(customer_id=cid, operations=[op])
+
+        results = response.results if not validate_only else [{"resource_name": f"customers/{cid}/assets/dry-run"}]
+        asset_rn = results[0]["resource_name"] if isinstance(results[0], dict) else getattr(results[0], "resource_name", f"customers/{cid}/assets/dry-run")
+
+        link_result = None
+        if campaign_id:
+            link_result = link_asset_to_campaign(
+                customer_id=cid,
+                campaign_id=campaign_id,
+                asset_id_or_resource_name=asset_rn,
+                field_type="BUSINESS_NAME",
+                validate_only=validate_only,
+            )
+
+        return format_mutate_response(
+            action="create_business_name_asset",
+            results=results,
+            validate_only=validate_only,
+            extra={
+                "customer_id": cid,
+                "business_name": business_name,
+                "linked_to_campaign": bool(campaign_id),
+                "link_details": link_result,
+            },
+        )
+    except Exception as ex:
+        raise handle_googleads_exception(ex)
+
+
+@mcp.tool()
+def create_image_asset(
+    customer_id: str,
+    name: str,
+    image_url_or_base64: str,
+    field_type: str = "AD_IMAGE",
+    campaign_id: Optional[Union[str, int]] = None,
+    validate_only: bool = False,
+) -> Dict[str, Any]:
+    """Creates an Image asset (for square logos or ad marketing images) and optionally links it to a campaign.
+
+    Args:
+        customer_id: The Google Ads customer ID.
+        name: A descriptive name for the image asset.
+        image_url_or_base64: An HTTPS URL pointing to the image, or a base64-encoded image string.
+        field_type: 'AD_IMAGE' (marketing image) or 'BUSINESS_LOGO' (square business logo).
+        campaign_id: Optional campaign ID to link this asset to immediately.
+        validate_only: If True, only validates without applying.
+
+    Returns:
+        Dict with success status and created asset resource name.
+    """
+    import base64
+    import urllib.request
+
+    cid = clean_customer_id(customer_id)
+    try:
+        # Obtain image bytes
+        src = image_url_or_base64.strip()
+        if src.startswith("http://") or src.startswith("https://"):
+            req = urllib.request.Request(src, headers={"User-Agent": "GoogleAdsMCP/1.0"})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                image_bytes = resp.read()
+        else:
+            # Assume base64 string
+            if "base64," in src:
+                src = src.split("base64,")[-1]
+            image_bytes = base64.b64decode(src)
+
+        asset_service = utils.get_googleads_service("AssetService", customer_id=cid)
+        client = utils.get_googleads_client(login_customer_id=utils.get_login_customer_id_for_customer(cid))
+
+        op = utils.get_googleads_type("AssetOperation", customer_id=cid)
+        asset = op.create
+        asset.name = name.strip()
+        asset.type_ = get_enum_value(client, "AssetTypeEnum", "IMAGE")
+        asset.image_asset.data = image_bytes
+
+        if validate_only:
+            response = asset_service.mutate_assets(
+                request={
+                    "customer_id": cid,
+                    "operations": [op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = asset_service.mutate_assets(customer_id=cid, operations=[op])
+
+        results = response.results if not validate_only else [{"resource_name": f"customers/{cid}/assets/dry-run"}]
+        asset_rn = results[0]["resource_name"] if isinstance(results[0], dict) else getattr(results[0], "resource_name", f"customers/{cid}/assets/dry-run")
+
+        target_field_type = field_type.upper().strip()
+        link_result = None
+        if campaign_id:
+            link_result = link_asset_to_campaign(
+                customer_id=cid,
+                campaign_id=campaign_id,
+                asset_id_or_resource_name=asset_rn,
+                field_type=target_field_type,
+                validate_only=validate_only,
+            )
+
+        return format_mutate_response(
+            action="create_image_asset",
+            results=results,
+            validate_only=validate_only,
+            extra={
+                "customer_id": cid,
+                "asset_name": name,
+                "field_type": target_field_type,
+                "linked_to_campaign": bool(campaign_id),
+                "link_details": link_result,
+            },
+        )
+    except Exception as ex:
+        raise handle_googleads_exception(ex)
+
+
+@mcp.tool()
+def create_business_message_asset(
+    customer_id: str,
+    name: str,
+    whatsapp_phone_number: str,
+    starter_message: Optional[str] = None,
+    call_to_action: Optional[str] = None,
+    campaign_id: Optional[Union[str, int]] = None,
+    validate_only: bool = False,
+) -> Dict[str, Any]:
+    """Creates a Business Message (WhatsApp) asset and optionally links it to a campaign.
+
+    NOTE: The WhatsApp phone number must be configured/authorized in the Google Ads account.
+
+    Args:
+        customer_id: The Google Ads customer ID.
+        name: A descriptive name for the message asset.
+        whatsapp_phone_number: International format phone number (e.g. '+5511999999999').
+        starter_message: Optional pre-filled starter message sent when user clicks to chat.
+        call_to_action: Optional call to action text shown alongside the message button.
+        campaign_id: Optional campaign ID to link this asset to immediately.
+        validate_only: If True, only validates without applying.
+
+    Returns:
+        Dict with success status and created asset resource name.
+    """
+    cid = clean_customer_id(customer_id)
+    try:
+        asset_service = utils.get_googleads_service("AssetService", customer_id=cid)
+        client = utils.get_googleads_client(login_customer_id=utils.get_login_customer_id_for_customer(cid))
+
+        op = utils.get_googleads_type("AssetOperation", customer_id=cid)
+        asset = op.create
+        asset.name = name.strip()
+        asset.type_ = get_enum_value(client, "AssetTypeEnum", "BUSINESS_MESSAGE")
+
+        asset.business_message_asset.whatsapp_info.phone_number = whatsapp_phone_number.strip()
+        if starter_message:
+            asset.business_message_asset.starter_message = starter_message.strip()
+        if call_to_action:
+            asset.business_message_asset.call_to_action = call_to_action.strip()
+
+        if validate_only:
+            response = asset_service.mutate_assets(
+                request={
+                    "customer_id": cid,
+                    "operations": [op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = asset_service.mutate_assets(customer_id=cid, operations=[op])
+
+        results = response.results if not validate_only else [{"resource_name": f"customers/{cid}/assets/dry-run"}]
+        asset_rn = results[0]["resource_name"] if isinstance(results[0], dict) else getattr(results[0], "resource_name", f"customers/{cid}/assets/dry-run")
+
+        link_result = None
+        if campaign_id:
+            link_result = link_asset_to_campaign(
+                customer_id=cid,
+                campaign_id=campaign_id,
+                asset_id_or_resource_name=asset_rn,
+                field_type="BUSINESS_MESSAGE",
+                validate_only=validate_only,
+            )
+
+        return format_mutate_response(
+            action="create_business_message_asset",
+            results=results,
+            validate_only=validate_only,
+            extra={
+                "customer_id": cid,
+                "asset_name": name,
+                "phone_number": whatsapp_phone_number,
+                "linked_to_campaign": bool(campaign_id),
+                "link_details": link_result,
+            },
+        )
+    except Exception as ex:
+        raise handle_googleads_exception(ex)
+

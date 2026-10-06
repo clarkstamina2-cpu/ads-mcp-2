@@ -91,9 +91,9 @@ def create_responsive_search_ad(
         for h in headlines:
             headline_asset = utils.get_googleads_type("AdTextAsset", customer_id=cid)
             if isinstance(h, str):
-                headline_asset.text = h[:30]
+                headline_asset.text = h.strip()
             elif isinstance(h, dict):
-                headline_asset.text = str(h.get("text", ""))[:30]
+                headline_asset.text = str(h.get("text", "")).strip()
                 pin_str = h.get("pinned_field")
                 if pin_str:
                     pin_enum = getattr(
@@ -109,9 +109,9 @@ def create_responsive_search_ad(
         for d in descriptions:
             desc_asset = utils.get_googleads_type("AdTextAsset", customer_id=cid)
             if isinstance(d, str):
-                desc_asset.text = d[:90]
+                desc_asset.text = d.strip()
             elif isinstance(d, dict):
-                desc_asset.text = str(d.get("text", ""))[:90]
+                desc_asset.text = str(d.get("text", "")).strip()
                 pin_str = d.get("pinned_field")
                 if pin_str:
                     pin_enum = getattr(
@@ -297,3 +297,130 @@ def create_pmax_asset_group(
         )
     except Exception as ex:
         raise handle_googleads_exception(ex)
+
+
+@mcp.tool()
+def update_responsive_search_ad(
+    customer_id: str,
+    ad_id: Union[str, int],
+    headlines: Optional[List[Union[str, Dict[str, Any]]]] = None,
+    descriptions: Optional[List[Union[str, Dict[str, Any]]]] = None,
+    final_urls: Optional[List[str]] = None,
+    path1: Optional[str] = None,
+    path2: Optional[str] = None,
+    validate_only: bool = False,
+) -> Dict[str, Any]:
+    """Updates an existing Responsive Search Ad (RSA) using AdService.
+
+    NOTE: In Google Ads API, modifying headlines or descriptions replaces the entire list of assets.
+    Always provide the complete list of headlines and descriptions you wish to retain on the ad.
+
+    Args:
+        customer_id: The Google Ads customer ID.
+        ad_id: The Ad ID or resource name ('customers/.../ads/...').
+        headlines: Complete list of 3 to 15 headlines (strings or dicts with pinning).
+        descriptions: Complete list of 2 to 4 descriptions (strings or dicts with pinning).
+        final_urls: List of destination URLs.
+        path1: Optional display path 1 (e.g. 'servicos').
+        path2: Optional display path 2 (e.g. 'contato').
+        validate_only: If True, only validates without applying.
+
+    Returns:
+        Dict with success status and updated ad details.
+    """
+    cid = clean_customer_id(customer_id)
+    clean_a_id = str(ad_id).strip()
+    if clean_a_id.startswith("customers/"):
+        ad_rn = clean_a_id
+    else:
+        ad_rn = f"customers/{cid}/ads/{clean_a_id}"
+
+    try:
+        ad_service = utils.get_googleads_service("AdService", customer_id=cid)
+        op = utils.get_googleads_type("AdOperation", customer_id=cid)
+        client = utils.get_googleads_client(login_customer_id=utils.get_login_customer_id_for_customer(cid))
+
+        ad = op.update
+        ad.resource_name = ad_rn
+
+        if final_urls is not None:
+            ad.final_urls.extend(final_urls)
+            op.update_mask.paths.append("final_urls")
+
+        if path1 is not None:
+            ad.responsive_search_ad.path1 = path1.strip()[:15]
+            op.update_mask.paths.append("responsive_search_ad.path1")
+
+        if path2 is not None:
+            ad.responsive_search_ad.path2 = path2.strip()[:15]
+            op.update_mask.paths.append("responsive_search_ad.path2")
+
+        if headlines is not None:
+            for h in headlines:
+                headline_asset = utils.get_googleads_type("AdTextAsset", customer_id=cid)
+                if isinstance(h, str):
+                    headline_asset.text = h.strip()
+                elif isinstance(h, dict):
+                    headline_asset.text = str(h.get("text", "")).strip()
+                    pin_str = h.get("pinned_field")
+                    if pin_str:
+                        pin_enum = getattr(
+                            get_enum_class(client, "ServedAssetFieldTypeEnum"),
+                            pin_str.upper(),
+                            None,
+                        )
+                        if pin_enum:
+                            headline_asset.pinned_field = pin_enum
+                ad.responsive_search_ad.headlines.append(headline_asset)
+            op.update_mask.paths.append("responsive_search_ad.headlines")
+
+        if descriptions is not None:
+            for d in descriptions:
+                desc_asset = utils.get_googleads_type("AdTextAsset", customer_id=cid)
+                if isinstance(d, str):
+                    desc_asset.text = d.strip()
+                elif isinstance(d, dict):
+                    desc_asset.text = str(d.get("text", "")).strip()
+                    pin_str = d.get("pinned_field")
+                    if pin_str:
+                        pin_enum = getattr(
+                            get_enum_class(client, "ServedAssetFieldTypeEnum"),
+                            pin_str.upper(),
+                            None,
+                        )
+                        if pin_enum:
+                            desc_asset.pinned_field = pin_enum
+                ad.responsive_search_ad.descriptions.append(desc_asset)
+            op.update_mask.paths.append("responsive_search_ad.descriptions")
+
+        if not op.update_mask.paths:
+            raise ValueError("At least one field (headlines, descriptions, final_urls, path1, path2) must be provided for update.")
+
+        if validate_only:
+            response = ad_service.mutate_ads(
+                request={
+                    "customer_id": cid,
+                    "operations": [op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = ad_service.mutate_ads(
+                customer_id=cid,
+                operations=[op],
+            )
+
+        results = response.results if not validate_only else [{"resource_name": ad_rn}]
+        return format_mutate_response(
+            action="update_responsive_search_ad",
+            results=results,
+            validate_only=validate_only,
+            extra={
+                "customer_id": cid,
+                "ad_resource_name": ad_rn,
+                "updated_paths": list(op.update_mask.paths),
+            },
+        )
+    except Exception as ex:
+        raise handle_googleads_exception(ex)
+

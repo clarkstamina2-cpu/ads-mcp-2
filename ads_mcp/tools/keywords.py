@@ -610,3 +610,220 @@ def apply_negative_keyword_shared_set_to_campaign(
         )
     except Exception as ex:
         raise handle_googleads_exception(ex)
+
+
+@mcp.tool()
+def add_terms_to_negative_shared_set(
+    customer_id: str,
+    shared_set_id: Union[str, int],
+    keywords: List[Union[str, Dict[str, Any]]],
+    default_match_type: str = "BROAD",
+    validate_only: bool = False,
+) -> Dict[str, Any]:
+    """Adds negative keyword terms to an existing shared negative keyword list (SharedSet).
+
+    Args:
+        customer_id: The Google Ads customer ID.
+        shared_set_id: The SharedSet ID or resource name ('customers/.../sharedSets/...').
+        keywords: List of negative keywords (e.g. ['gratis', 'curso', 'vagas'] or [{'text': '...', 'match_type': 'PHRASE'}]).
+        default_match_type: 'BROAD' (default), 'PHRASE', or 'EXACT'.
+        validate_only: If True, only validates without applying.
+
+    Returns:
+        Dict with success status and count of added negative terms.
+    """
+    cid = clean_customer_id(customer_id)
+    clean_s_id = str(shared_set_id).strip()
+    if clean_s_id.startswith("customers/"):
+        shared_set_rn = clean_s_id
+    else:
+        shared_set_rn = f"customers/{cid}/sharedSets/{clean_s_id}"
+
+    try:
+        shared_criterion_service = utils.get_googleads_service("SharedCriterionService", customer_id=cid)
+        client = utils.get_googleads_client(login_customer_id=utils.get_login_customer_id_for_customer(cid))
+
+        crit_ops = []
+        for kw in keywords:
+            crit_op = utils.get_googleads_type("SharedCriterionOperation", customer_id=cid)
+            crit = crit_op.create
+            crit.shared_set = shared_set_rn
+
+            if isinstance(kw, str):
+                text = kw
+                match_type_str = default_match_type
+            elif isinstance(kw, dict):
+                text = kw.get("text", "")
+                match_type_str = kw.get("match_type", default_match_type)
+            else:
+                continue
+
+            match_enum = getattr(
+                get_enum_class(client, "KeywordMatchTypeEnum"),
+                match_type_str.upper(),
+                get_enum_value(client, "KeywordMatchTypeEnum", "BROAD"),
+            )
+            crit.keyword.text = text.strip()
+            crit.keyword.match_type = match_enum
+            crit_ops.append(crit_op)
+
+        if not crit_ops:
+            raise ValueError("No valid keywords provided to add to shared set.")
+
+        if validate_only:
+            response = shared_criterion_service.mutate_shared_criteria(
+                request={
+                    "customer_id": cid,
+                    "operations": crit_ops,
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = shared_criterion_service.mutate_shared_criteria(
+                customer_id=cid,
+                operations=crit_ops,
+            )
+
+        results = response.results if not validate_only else [{"resource_name": f"customers/{cid}/sharedCriteria/dry-run"} for _ in crit_ops]
+        return format_mutate_response(
+            action="add_terms_to_negative_shared_set",
+            results=results,
+            validate_only=validate_only,
+            extra={
+                "customer_id": cid,
+                "shared_set": shared_set_rn,
+                "count": len(crit_ops),
+            },
+        )
+    except Exception as ex:
+        raise handle_googleads_exception(ex)
+
+
+@mcp.tool()
+def remove_terms_from_negative_shared_set(
+    customer_id: str,
+    shared_criterion_resource_names_or_ids: List[Union[str, int]],
+    shared_set_id: Optional[Union[str, int]] = None,
+    validate_only: bool = False,
+) -> Dict[str, Any]:
+    """Removes negative keyword terms from a shared negative keyword list.
+
+    Args:
+        customer_id: The Google Ads customer ID.
+        shared_criterion_resource_names_or_ids: List of criterion resource names ('customers/.../sharedCriteria/...') or criterion IDs (if shared_set_id is provided).
+        shared_set_id: Optional shared set ID, required only if passing numeric criterion IDs instead of full resource names.
+        validate_only: If True, only validates without applying.
+
+    Returns:
+        Dict with success status and count of removed negative terms.
+    """
+    cid = clean_customer_id(customer_id)
+    try:
+        shared_criterion_service = utils.get_googleads_service("SharedCriterionService", customer_id=cid)
+        operations = []
+
+        for item in shared_criterion_resource_names_or_ids:
+            raw = str(item).strip()
+            if raw.startswith("customers/"):
+                rn = raw
+            elif "~" in raw:
+                rn = f"customers/{cid}/sharedCriteria/{raw}"
+            elif shared_set_id:
+                clean_s = str(shared_set_id).replace("-", "").strip().removeprefix(f"customers/{cid}/sharedSets/")
+                rn = f"customers/{cid}/sharedCriteria/{clean_s}~{raw}"
+            else:
+                raise ValueError(f"Cannot resolve resource name for criterion ID '{raw}' without shared_set_id.")
+
+            op = utils.get_googleads_type("SharedCriterionOperation", customer_id=cid)
+            op.remove = rn
+            operations.append(op)
+
+        if not operations:
+            raise ValueError("No criteria provided to remove.")
+
+        if validate_only:
+            response = shared_criterion_service.mutate_shared_criteria(
+                request={
+                    "customer_id": cid,
+                    "operations": operations,
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = shared_criterion_service.mutate_shared_criteria(
+                customer_id=cid,
+                operations=operations,
+            )
+
+        results = response.results if not validate_only else [{"resource_name": "dry-run"} for _ in operations]
+        return format_mutate_response(
+            action="remove_terms_from_negative_shared_set",
+            results=results,
+            validate_only=validate_only,
+            extra={
+                "customer_id": cid,
+                "removed_count": len(operations),
+            },
+        )
+    except Exception as ex:
+        raise handle_googleads_exception(ex)
+
+
+@mcp.tool()
+def remove_negative_keyword_shared_set_from_campaign(
+    customer_id: str,
+    campaign_id: Union[str, int],
+    shared_set_id: Union[str, int],
+    validate_only: bool = False,
+) -> Dict[str, Any]:
+    """Detaches/unlinks a shared negative keyword list (SharedSet) from a campaign.
+
+    Args:
+        customer_id: The Google Ads customer ID.
+        campaign_id: The campaign ID or resource name.
+        shared_set_id: The SharedSet ID or resource name.
+        validate_only: If True, only validates without applying.
+
+    Returns:
+        Dict with success status.
+    """
+    cid = clean_customer_id(customer_id)
+    clean_c_id = str(campaign_id).replace("-", "").strip().removeprefix(f"customers/{cid}/campaigns/")
+    clean_s_id = str(shared_set_id).replace("-", "").strip().removeprefix(f"customers/{cid}/sharedSets/")
+
+    resource_name = f"customers/{cid}/campaignSharedSets/{clean_c_id}~{clean_s_id}"
+
+    try:
+        campaign_shared_set_service = utils.get_googleads_service("CampaignSharedSetService", customer_id=cid)
+        op = utils.get_googleads_type("CampaignSharedSetOperation", customer_id=cid)
+        op.remove = resource_name
+
+        if validate_only:
+            response = campaign_shared_set_service.mutate_campaign_shared_sets(
+                request={
+                    "customer_id": cid,
+                    "operations": [op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = campaign_shared_set_service.mutate_campaign_shared_sets(
+                customer_id=cid,
+                operations=[op],
+            )
+
+        results = response.results if not validate_only else [{"resource_name": resource_name}]
+        return format_mutate_response(
+            action="remove_negative_keyword_shared_set_from_campaign",
+            results=results,
+            validate_only=validate_only,
+            extra={
+                "customer_id": cid,
+                "campaign_id": clean_c_id,
+                "shared_set_id": clean_s_id,
+                "removed_resource_name": resource_name,
+            },
+        )
+    except Exception as ex:
+        raise handle_googleads_exception(ex)
+

@@ -45,6 +45,9 @@ def create_campaign(
     target_search_network: bool = True,
     target_content_network: bool = False,
     target_partner_search_network: bool = False,
+    positive_geo_target_type: Optional[str] = None,
+    negative_geo_target_type: Optional[str] = None,
+    contains_eu_political_advertising: bool = False,
     validate_only: bool = False,
 ) -> Dict[str, Any]:
     """Creates a new campaign in Google Ads.
@@ -67,6 +70,9 @@ def create_campaign(
         target_search_network: Target Search Partners network (default True).
         target_content_network: Target Google Display Network expansion (default False).
         target_partner_search_network: Target partner search network (default False).
+        positive_geo_target_type: Positive location target type ('PRESENCE' or 'PRESENCE_OR_INTEREST').
+        negative_geo_target_type: Negative location target type ('PRESENCE' or 'PRESENCE_OR_INTEREST').
+        contains_eu_political_advertising: Declares whether the campaign contains EU political ads (default False).
         validate_only: If True, only validates the request without executing.
 
     Returns:
@@ -88,6 +94,12 @@ def create_campaign(
         campaign = campaign_op.create
         campaign.name = name
         campaign.campaign_budget = budget_resource_name
+
+        # EU Political Advertising Status (Mandatory in Google Ads API v17+)
+        eu_status_name = "CONTAINS_EU_POLITICAL_ADVERTISING" if contains_eu_political_advertising else "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING"
+        eu_enum = get_enum_value(client, "EuPoliticalAdvertisingStatusEnum", eu_status_name)
+        if eu_enum is not None and hasattr(campaign, "contains_eu_political_advertising"):
+            campaign.contains_eu_political_advertising = eu_enum
 
         # Channel type
         channel_enum = getattr(
@@ -112,11 +124,39 @@ def create_campaign(
             campaign.network_settings.target_content_network = target_content_network
             campaign.network_settings.target_partner_search_network = target_partner_search_network
 
-        # Dates
+        # Geographic Targeting Setting (Presence vs Presence or Interest)
+        if positive_geo_target_type:
+            pos_enum = getattr(
+                get_enum_class(client, "PositiveGeoTargetTypeEnum"),
+                positive_geo_target_type.upper(),
+                None,
+            )
+            if pos_enum:
+                campaign.geo_target_type_setting.positive_geo_target_type = pos_enum
+
+        if negative_geo_target_type:
+            neg_enum = getattr(
+                get_enum_class(client, "NegativeGeoTargetTypeEnum"),
+                negative_geo_target_type.upper(),
+                None,
+            )
+            if neg_enum:
+                campaign.geo_target_type_setting.negative_geo_target_type = neg_enum
+
+        # Dates (supports both modern start_date_time and legacy start_date)
         if start_date:
-            campaign.start_date = start_date.replace("-", "")
+            sd = start_date.strip()
+            if hasattr(campaign, "start_date_time"):
+                campaign.start_date_time = f"{sd} 00:00:00" if len(sd) == 10 and "-" in sd else sd
+            elif hasattr(campaign, "start_date"):
+                campaign.start_date = sd.replace("-", "")
+
         if end_date:
-            campaign.end_date = end_date.replace("-", "")
+            ed = end_date.strip()
+            if hasattr(campaign, "end_date_time"):
+                campaign.end_date_time = f"{ed} 23:59:59" if len(ed) == 10 and "-" in ed else ed
+            elif hasattr(campaign, "end_date"):
+                campaign.end_date = ed.replace("-", "")
 
         # Bidding Strategy
         strat_upper = bidding_strategy_type.upper()
@@ -384,11 +424,22 @@ def update_campaign_dates(
         campaign.resource_name = resource_name
 
         if start_date:
-            campaign.start_date = start_date.replace("-", "")
-            campaign_op.update_mask.paths.append("start_date")
+            sd = start_date.strip()
+            if hasattr(campaign, "start_date_time"):
+                campaign.start_date_time = f"{sd} 00:00:00" if len(sd) == 10 and "-" in sd else sd
+                campaign_op.update_mask.paths.append("start_date_time")
+            elif hasattr(campaign, "start_date"):
+                campaign.start_date = sd.replace("-", "")
+                campaign_op.update_mask.paths.append("start_date")
+
         if end_date:
-            campaign.end_date = end_date.replace("-", "")
-            campaign_op.update_mask.paths.append("end_date")
+            ed = end_date.strip()
+            if hasattr(campaign, "end_date_time"):
+                campaign.end_date_time = f"{ed} 23:59:59" if len(ed) == 10 and "-" in ed else ed
+                campaign_op.update_mask.paths.append("end_date_time")
+            elif hasattr(campaign, "end_date"):
+                campaign.end_date = ed.replace("-", "")
+                campaign_op.update_mask.paths.append("end_date")
 
         if validate_only:
             response = campaign_service.mutate_campaigns(
@@ -480,3 +531,183 @@ def update_campaign_name(
         )
     except Exception as ex:
         raise handle_googleads_exception(ex)
+
+
+@mcp.tool()
+def update_campaign_network_settings(
+    customer_id: str,
+    campaign_id: Union[str, int],
+    target_google_search: Optional[bool] = None,
+    target_search_network: Optional[bool] = None,
+    target_content_network: Optional[bool] = None,
+    target_partner_search_network: Optional[bool] = None,
+    validate_only: bool = False,
+) -> Dict[str, Any]:
+    """Updates network settings (Search Partners, Display Network) for an existing campaign.
+
+    Args:
+        customer_id: The Google Ads customer ID.
+        campaign_id: The campaign ID or resource name.
+        target_google_search: Include Google Search network (default None to leave unchanged).
+        target_search_network: Include Google Search Partners (default None to leave unchanged).
+        target_content_network: Include Google Display Network expansion (default None to leave unchanged).
+        target_partner_search_network: Include partner search network (default None to leave unchanged).
+        validate_only: If True, only validates without applying.
+
+    Returns:
+        Dict with success status and updated network settings.
+    """
+    cid = clean_customer_id(customer_id)
+    clean_c_id = str(campaign_id).strip()
+    if clean_c_id.startswith("customers/"):
+        resource_name = clean_c_id
+    else:
+        resource_name = f"customers/{cid}/campaigns/{clean_c_id}"
+
+    try:
+        campaign_service = utils.get_googleads_service("CampaignService", customer_id=cid)
+        campaign_op = utils.get_googleads_type("CampaignOperation", customer_id=cid)
+        campaign = campaign_op.update
+        campaign.resource_name = resource_name
+
+        updated_fields = {}
+        if target_google_search is not None:
+            campaign.network_settings.target_google_search = target_google_search
+            campaign_op.update_mask.paths.append("network_settings.target_google_search")
+            updated_fields["target_google_search"] = target_google_search
+        if target_search_network is not None:
+            campaign.network_settings.target_search_network = target_search_network
+            campaign_op.update_mask.paths.append("network_settings.target_search_network")
+            updated_fields["target_search_network"] = target_search_network
+        if target_content_network is not None:
+            campaign.network_settings.target_content_network = target_content_network
+            campaign_op.update_mask.paths.append("network_settings.target_content_network")
+            updated_fields["target_content_network"] = target_content_network
+        if target_partner_search_network is not None:
+            campaign.network_settings.target_partner_search_network = target_partner_search_network
+            campaign_op.update_mask.paths.append("network_settings.target_partner_search_network")
+            updated_fields["target_partner_search_network"] = target_partner_search_network
+
+        if not campaign_op.update_mask.paths:
+            raise ValueError("At least one network setting parameter must be provided.")
+
+        if validate_only:
+            response = campaign_service.mutate_campaigns(
+                request={
+                    "customer_id": cid,
+                    "operations": [campaign_op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = campaign_service.mutate_campaigns(
+                customer_id=cid,
+                operations=[campaign_op],
+            )
+
+        results = response.results if not validate_only else [{"resource_name": resource_name}]
+        return format_mutate_response(
+            action="update_campaign_network_settings",
+            results=results,
+            validate_only=validate_only,
+            extra={
+                "customer_id": cid,
+                "resource_name": resource_name,
+                "updated_network_settings": updated_fields,
+            },
+        )
+    except Exception as ex:
+        raise handle_googleads_exception(ex)
+
+
+@mcp.tool()
+def update_campaign_geo_target_type(
+    customer_id: str,
+    campaign_id: Union[str, int],
+    positive_geo_target_type: Optional[str] = None,
+    negative_geo_target_type: Optional[str] = None,
+    validate_only: bool = False,
+) -> Dict[str, Any]:
+    """Updates geographic target types (PRESENCE vs PRESENCE_OR_INTEREST) for an existing campaign.
+
+    Args:
+        customer_id: The Google Ads customer ID.
+        campaign_id: The campaign ID or resource name.
+        positive_geo_target_type: 'PRESENCE' (people in/regularly in) or 'PRESENCE_OR_INTEREST' (people in, regularly in, or who have shown interest).
+        negative_geo_target_type: 'PRESENCE' or 'PRESENCE_OR_INTEREST' for excluded locations.
+        validate_only: If True, only validates without applying.
+
+    Returns:
+        Dict with success status and updated geo target type settings.
+    """
+    cid = clean_customer_id(customer_id)
+    clean_c_id = str(campaign_id).strip()
+    if clean_c_id.startswith("customers/"):
+        resource_name = clean_c_id
+    else:
+        resource_name = f"customers/{cid}/campaigns/{clean_c_id}"
+
+    try:
+        campaign_service = utils.get_googleads_service("CampaignService", customer_id=cid)
+        campaign_op = utils.get_googleads_type("CampaignOperation", customer_id=cid)
+        client = utils.get_googleads_client(login_customer_id=utils.get_login_customer_id_for_customer(cid))
+
+        campaign = campaign_op.update
+        campaign.resource_name = resource_name
+
+        updated = {}
+        if positive_geo_target_type:
+            pos_enum = getattr(
+                get_enum_class(client, "PositiveGeoTargetTypeEnum"),
+                positive_geo_target_type.upper(),
+                None,
+            )
+            if not pos_enum:
+                raise ValueError(f"Invalid positive_geo_target_type '{positive_geo_target_type}'. Valid values: PRESENCE, PRESENCE_OR_INTEREST.")
+            campaign.geo_target_type_setting.positive_geo_target_type = pos_enum
+            campaign_op.update_mask.paths.append("geo_target_type_setting.positive_geo_target_type")
+            updated["positive_geo_target_type"] = positive_geo_target_type.upper()
+
+        if negative_geo_target_type:
+            neg_enum = getattr(
+                get_enum_class(client, "NegativeGeoTargetTypeEnum"),
+                negative_geo_target_type.upper(),
+                None,
+            )
+            if not neg_enum:
+                raise ValueError(f"Invalid negative_geo_target_type '{negative_geo_target_type}'. Valid values: PRESENCE, PRESENCE_OR_INTEREST.")
+            campaign.geo_target_type_setting.negative_geo_target_type = neg_enum
+            campaign_op.update_mask.paths.append("geo_target_type_setting.negative_geo_target_type")
+            updated["negative_geo_target_type"] = negative_geo_target_type.upper()
+
+        if not campaign_op.update_mask.paths:
+            raise ValueError("At least one geo target type setting (positive or negative) must be provided.")
+
+        if validate_only:
+            response = campaign_service.mutate_campaigns(
+                request={
+                    "customer_id": cid,
+                    "operations": [campaign_op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = campaign_service.mutate_campaigns(
+                customer_id=cid,
+                operations=[campaign_op],
+            )
+
+        results = response.results if not validate_only else [{"resource_name": resource_name}]
+        return format_mutate_response(
+            action="update_campaign_geo_target_type",
+            results=results,
+            validate_only=validate_only,
+            extra={
+                "customer_id": cid,
+                "resource_name": resource_name,
+                "updated_geo_target_types": updated,
+            },
+        )
+    except Exception as ex:
+        raise handle_googleads_exception(ex)
+

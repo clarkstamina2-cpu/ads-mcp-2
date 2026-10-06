@@ -354,3 +354,221 @@ def set_campaign_device_bid_modifiers(
         )
     except Exception as ex:
         raise handle_googleads_exception(ex)
+
+
+@mcp.tool()
+def add_campaign_proximity_target(
+    customer_id: str,
+    campaign_id: Union[str, int],
+    latitude: float,
+    longitude: float,
+    radius: float,
+    radius_units: str = "KILOMETERS",
+    street_address: Optional[str] = None,
+    city_name: Optional[str] = None,
+    postal_code: Optional[str] = None,
+    negative: bool = False,
+    bid_modifier: Optional[float] = None,
+    validate_only: bool = False,
+) -> Dict[str, Any]:
+    """Adds a proximity (pin radius by coordinates) location target to a campaign.
+
+    Args:
+        customer_id: The Google Ads customer ID.
+        campaign_id: The campaign ID or resource name.
+        latitude: Latitude in degrees (e.g. -23.55052).
+        longitude: Longitude in degrees (e.g. -46.633308).
+        radius: Radius distance (e.g. 5.0, 10.0, 25.0).
+        radius_units: 'KILOMETERS' (default) or 'MILES'.
+        street_address: Optional street address for reference.
+        city_name: Optional city name for reference.
+        postal_code: Optional postal code (CEP).
+        negative: If True, excludes this radius; if False (default), includes/targets it.
+        bid_modifier: Optional bid modifier (e.g. 1.2 for +20%). Only valid for positive targeting.
+        validate_only: If True, only validates without applying.
+
+    Returns:
+        Dict with success status and created proximity criterion resource name.
+    """
+    cid = clean_customer_id(customer_id)
+    clean_c_id = str(campaign_id).strip()
+    if clean_c_id.startswith("customers/"):
+        campaign_rn = clean_c_id
+    else:
+        campaign_rn = f"customers/{cid}/campaigns/{clean_c_id}"
+
+    try:
+        campaign_criterion_service = utils.get_googleads_service("CampaignCriterionService", customer_id=cid)
+        op = utils.get_googleads_type("CampaignCriterionOperation", customer_id=cid)
+        client = utils.get_googleads_client(login_customer_id=utils.get_login_customer_id_for_customer(cid))
+
+        criterion = op.create
+        criterion.campaign = campaign_rn
+        criterion.negative = negative
+
+        # Micro-degrees conversion (1 degree = 1,000,000 micro-degrees)
+        criterion.proximity.geo_point.latitude_in_micro_degrees = int(float(latitude) * 1_000_000)
+        criterion.proximity.geo_point.longitude_in_micro_degrees = int(float(longitude) * 1_000_000)
+        criterion.proximity.radius = float(radius)
+
+        units_upper = radius_units.upper().strip()
+        units_enum = getattr(
+            get_enum_class(client, "ProximityRadiusUnitsEnum"),
+            units_upper,
+            get_enum_value(client, "ProximityRadiusUnitsEnum", "KILOMETERS"),
+        )
+        criterion.proximity.radius_units = units_enum
+
+        if street_address:
+            criterion.proximity.address.street_address = street_address
+        if city_name:
+            criterion.proximity.address.city_name = city_name
+        if postal_code:
+            criterion.proximity.address.postal_code = postal_code
+
+        if bid_modifier is not None and not negative:
+            criterion.bid_modifier = float(bid_modifier)
+
+        if validate_only:
+            response = campaign_criterion_service.mutate_campaign_criteria(
+                request={
+                    "customer_id": cid,
+                    "operations": [op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = campaign_criterion_service.mutate_campaign_criteria(
+                customer_id=cid,
+                operations=[op],
+            )
+
+        results = response.results if not validate_only else [{"resource_name": f"customers/{cid}/campaignCriteria/dry-run"}]
+        return format_mutate_response(
+            action="add_campaign_proximity_target",
+            results=results,
+            validate_only=validate_only,
+            extra={
+                "customer_id": cid,
+                "campaign": campaign_rn,
+                "latitude": latitude,
+                "longitude": longitude,
+                "radius": radius,
+                "radius_units": units_upper,
+                "negative": negative,
+            },
+        )
+    except Exception as ex:
+        raise handle_googleads_exception(ex)
+
+
+@mcp.tool()
+def add_campaign_languages(
+    customer_id: str,
+    campaign_id: Union[str, int],
+    languages: List[Union[str, int]],
+    validate_only: bool = False,
+) -> Dict[str, Any]:
+    """Adds language targeting to a campaign.
+
+    Common language codes:
+    - 'pt' or 'portuguese' -> 1014
+    - 'en' or 'english'    -> 1000
+    - 'es' or 'spanish'    -> 1003
+    - 'fr' or 'french'     -> 1002
+    - 'de' or 'german'     -> 1001
+    - 'it' or 'italian'    -> 1004
+    Direct integer constant IDs are also accepted.
+
+    Args:
+        customer_id: The Google Ads customer ID.
+        campaign_id: The campaign ID or resource name.
+        languages: List of language codes ('pt', 'en', 'es') or criterion IDs (1014, 1000).
+        validate_only: If True, only validates without applying.
+
+    Returns:
+        Dict with success status and created language criteria resource names.
+    """
+    cid = clean_customer_id(customer_id)
+    clean_c_id = str(campaign_id).strip()
+    if clean_c_id.startswith("customers/"):
+        campaign_rn = clean_c_id
+    else:
+        campaign_rn = f"customers/{cid}/campaigns/{clean_c_id}"
+
+    lang_map = {
+        "pt": 1014,
+        "por": 1014,
+        "portuguese": 1014,
+        "portugues": 1014,
+        "en": 1000,
+        "eng": 1000,
+        "english": 1000,
+        "ingles": 1000,
+        "es": 1003,
+        "spa": 1003,
+        "spanish": 1003,
+        "espanhol": 1003,
+        "fr": 1002,
+        "french": 1002,
+        "frances": 1002,
+        "de": 1001,
+        "german": 1001,
+        "alemao": 1001,
+        "it": 1004,
+        "italian": 1004,
+        "italiano": 1004,
+    }
+
+    try:
+        campaign_criterion_service = utils.get_googleads_service("CampaignCriterionService", customer_id=cid)
+        operations = []
+
+        for lang in languages:
+            clean_l = str(lang).strip().lower()
+            if clean_l.startswith("languageconstants/"):
+                lang_id = clean_l.split("/")[-1]
+            elif clean_l in lang_map:
+                lang_id = lang_map[clean_l]
+            elif clean_l.isdigit():
+                lang_id = int(clean_l)
+            else:
+                raise ValueError(f"Unrecognized language '{lang}'. Pass standard codes (e.g. 'pt', 'en', 'es') or constant IDs (1014, 1000).")
+
+            op = utils.get_googleads_type("CampaignCriterionOperation", customer_id=cid)
+            criterion = op.create
+            criterion.campaign = campaign_rn
+            criterion.language.language_constant = f"languageConstants/{lang_id}"
+            operations.append(op)
+
+        if not operations:
+            raise ValueError("No languages provided.")
+
+        if validate_only:
+            response = campaign_criterion_service.mutate_campaign_criteria(
+                request={
+                    "customer_id": cid,
+                    "operations": operations,
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = campaign_criterion_service.mutate_campaign_criteria(
+                customer_id=cid,
+                operations=operations,
+            )
+
+        results = response.results if not validate_only else [{"resource_name": f"customers/{cid}/campaignCriteria/dry-run"} for _ in operations]
+        return format_mutate_response(
+            action="add_campaign_languages",
+            results=results,
+            validate_only=validate_only,
+            extra={
+                "customer_id": cid,
+                "campaign": campaign_rn,
+                "languages": [str(l) for l in languages],
+            },
+        )
+    except Exception as ex:
+        raise handle_googleads_exception(ex)
+

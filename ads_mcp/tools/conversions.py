@@ -21,6 +21,8 @@ from ads_mcp.tools.mutate_utils import (
     clean_customer_id,
     handle_googleads_exception,
     format_mutate_response,
+    get_enum_class,
+    get_enum_value,
 )
 
 
@@ -190,3 +192,96 @@ def upload_call_conversions(
         )
     except Exception as ex:
         raise handle_googleads_exception(ex)
+
+
+@mcp.tool()
+def update_conversion_action(
+    customer_id: str,
+    conversion_action_id: Union[str, int],
+    primary_for_goal: Optional[bool] = None,
+    status: Optional[str] = None,
+    name: Optional[str] = None,
+    validate_only: bool = False,
+) -> Dict[str, Any]:
+    """Updates a conversion action (e.g. set as primary vs secondary for campaign goals, change status or name).
+
+    Args:
+        customer_id: The Google Ads customer ID.
+        conversion_action_id: The Conversion Action ID or resource name ('customers/.../conversionActions/...').
+        primary_for_goal: If True, marks as primary (used for bidding/optimization); if False, marks as secondary (observation only).
+        status: Conversion action status ('ENABLED', 'PAUSED', 'HIDDEN').
+        name: Optional new name for the conversion action.
+        validate_only: If True, only validates without applying changes.
+
+    Returns:
+        Dict with success status and updated conversion action details.
+    """
+    cid = clean_customer_id(customer_id)
+    clean_id = str(conversion_action_id).replace("-", "").strip()
+    if clean_id.startswith("customers/"):
+        resource_name = clean_id
+    else:
+        resource_name = f"customers/{cid}/conversionActions/{clean_id}"
+
+    try:
+        conversion_action_service = utils.get_googleads_service("ConversionActionService", customer_id=cid)
+        op = utils.get_googleads_type("ConversionActionOperation", customer_id=cid)
+        client = utils.get_googleads_client(login_customer_id=utils.get_login_customer_id_for_customer(cid))
+
+        action = op.update
+        action.resource_name = resource_name
+
+        updated = {}
+        if primary_for_goal is not None:
+            action.primary_for_goal = primary_for_goal
+            op.update_mask.paths.append("primary_for_goal")
+            updated["primary_for_goal"] = primary_for_goal
+
+        if status is not None:
+            status_enum = getattr(
+                get_enum_class(client, "ConversionActionStatusEnum"),
+                status.upper().strip(),
+                None,
+            )
+            if not status_enum:
+                raise ValueError(f"Invalid status '{status}'. Valid statuses: ENABLED, PAUSED, HIDDEN.")
+            action.status = status_enum
+            op.update_mask.paths.append("status")
+            updated["status"] = status.upper().strip()
+
+        if name is not None:
+            action.name = name.strip()
+            op.update_mask.paths.append("name")
+            updated["name"] = name.strip()
+
+        if not op.update_mask.paths:
+            raise ValueError("At least one parameter (primary_for_goal, status, name) must be provided for update.")
+
+        if validate_only:
+            response = conversion_action_service.mutate_conversion_actions(
+                request={
+                    "customer_id": cid,
+                    "operations": [op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = conversion_action_service.mutate_conversion_actions(
+                customer_id=cid,
+                operations=[op],
+            )
+
+        results = response.results if not validate_only else [{"resource_name": resource_name}]
+        return format_mutate_response(
+            action="update_conversion_action",
+            results=results,
+            validate_only=validate_only,
+            extra={
+                "customer_id": cid,
+                "resource_name": resource_name,
+                "updated_fields": updated,
+            },
+        )
+    except Exception as ex:
+        raise handle_googleads_exception(ex)
+

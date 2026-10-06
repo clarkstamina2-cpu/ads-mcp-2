@@ -164,3 +164,62 @@ def update_campaign_budget(
         )
     except Exception as ex:
         raise handle_googleads_exception(ex)
+
+
+@mcp.tool()
+def remove_campaign_budget(
+    customer_id: str,
+    budget_id: Union[str, int],
+    validate_only: bool = False,
+) -> Dict[str, Any]:
+    """Removes an unused/orphan campaign budget from the account.
+
+    NOTE: Google Ads allows removing a budget ONLY if it is not currently associated with any active campaign.
+
+    Args:
+        customer_id: The Google Ads customer ID.
+        budget_id: The Campaign Budget ID or full resource name ('customers/.../campaignBudgets/...').
+        validate_only: If True, only validates without applying changes.
+
+    Returns:
+        Dict with success status and removed budget details.
+    """
+    cid = clean_customer_id(customer_id)
+    clean_b_id = str(budget_id).replace("-", "").strip()
+    if clean_b_id.startswith("customers/"):
+        resource_name = clean_b_id
+    else:
+        resource_name = f"customers/{cid}/campaignBudgets/{clean_b_id}"
+
+    try:
+        campaign_budget_service = utils.get_googleads_service("CampaignBudgetService", customer_id=cid)
+        budget_op = utils.get_googleads_type("CampaignBudgetOperation", customer_id=cid)
+        budget_op.remove = resource_name
+
+        if validate_only:
+            response = campaign_budget_service.mutate_campaign_budgets(
+                request={
+                    "customer_id": cid,
+                    "operations": [budget_op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = campaign_budget_service.mutate_campaign_budgets(
+                customer_id=cid,
+                operations=[budget_op],
+            )
+
+        results = response.results if not validate_only else [{"resource_name": resource_name}]
+        return format_mutate_response(
+            action="remove_campaign_budget",
+            results=results,
+            validate_only=validate_only,
+            extra={
+                "customer_id": cid,
+                "removed_resource_name": resource_name,
+            },
+        )
+    except Exception as ex:
+        raise handle_googleads_exception(ex)
+
