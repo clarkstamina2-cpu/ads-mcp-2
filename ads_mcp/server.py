@@ -32,6 +32,8 @@ from ads_mcp.tools import (
     targeting,
     assets,
     conversions,
+    planner,
+    reporting,
 )  # noqa: F401
 from ads_mcp.resources import (
     discovery,
