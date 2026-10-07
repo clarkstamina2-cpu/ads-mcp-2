@@ -370,6 +370,9 @@ def link_asset_to_campaign(
         field_type: Field type ('SITELINK', 'CALLOUT', 'STRUCTURED_SNIPPET', 'CALL', 'PROMOTION', 'PRICE', 'LEAD_FORM', 'BUSINESS_NAME', 'BUSINESS_LOGO', 'AD_IMAGE', 'BUSINESS_MESSAGE').
         validate_only: If True, only validates without applying.
 
+    Example:
+        link_asset_to_campaign(customer_id="1234567890", campaign_id="10958241485", asset_id_or_resource_name="428316256019", field_type="BUSINESS_MESSAGE")
+
     Returns:
         Dict with success status and campaign asset link details.
     """
@@ -649,6 +652,15 @@ def create_business_message_asset(
         link_to_customer: If True, links this WhatsApp asset at the Customer (Account) level so all campaigns can use it.
         validate_only: If True, only validates without applying.
 
+    Example:
+        create_business_message_asset(
+            customer_id="1234567890",
+            name="WhatsApp Atendimento",
+            whatsapp_phone_number="(11) 99999-9999",
+            call_to_action="Fale Conosco",
+            link_to_customer=True
+        )
+
     Returns:
         Dict with success status, created asset resource name, and linkage details.
     """
@@ -778,6 +790,9 @@ def unlink_asset_from_campaign(
         campaign_asset_resource_name: Optional full resource name of the CampaignAsset link.
         validate_only: If True, only validates without applying.
 
+    Example:
+        unlink_asset_from_campaign(customer_id="1234567890", campaign_id="10958241485", asset_id_or_resource_name="428316256019", field_type="BUSINESS_MESSAGE")
+
     Returns:
         Dict with success status and removed campaign asset details.
     """
@@ -841,6 +856,9 @@ def link_asset_to_customer(
         asset_id_or_resource_name: The Asset ID or full resource name ('customers/.../assets/...').
         field_type: Field type ('SITELINK', 'CALLOUT', 'STRUCTURED_SNIPPET', 'CALL', 'PROMOTION', 'PRICE', 'LEAD_FORM', 'BUSINESS_NAME', 'BUSINESS_LOGO', 'AD_IMAGE', 'BUSINESS_MESSAGE').
         validate_only: If True, only validates without applying.
+
+    Example:
+        link_asset_to_customer(customer_id="1234567890", asset_id_or_resource_name="428316256019", field_type="BUSINESS_MESSAGE")
 
     Returns:
         Dict with success status and customer asset link details.
@@ -918,6 +936,9 @@ def unlink_asset_from_customer(
         field_type: Field type ('SITELINK', 'CALLOUT', 'STRUCTURED_SNIPPET', 'CALL', 'PROMOTION', 'PRICE', 'LEAD_FORM', 'BUSINESS_NAME', 'BUSINESS_LOGO', 'AD_IMAGE', 'BUSINESS_MESSAGE').
         customer_asset_resource_name: Optional full resource name of the CustomerAsset link.
         validate_only: If True, only validates without applying.
+
+    Example:
+        unlink_asset_from_customer(customer_id="1234567890", asset_id_or_resource_name="428316256019", field_type="BUSINESS_MESSAGE")
 
     Returns:
         Dict with success status and removed customer asset details.
@@ -1151,6 +1172,9 @@ def update_asset(
         call_to_action_selection: Optional updated call to action enum ('CONTACT_US', 'LEARN_MORE', etc.).
         final_urls: Optional updated destination URLs list.
         validate_only: If True, only validates without applying.
+
+    Example:
+        update_asset(customer_id="1234567890", asset_id_or_resource_name="12345678", sitelink_text="Fale com um Especialista")
 
     Returns:
         Dict with success status and updated asset details.
