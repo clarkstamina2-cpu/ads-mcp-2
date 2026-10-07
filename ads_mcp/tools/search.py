@@ -46,7 +46,15 @@ def search(
     clean_customer_id = str(customer_id).replace("-", "").strip()
     ga_service = utils.get_googleads_service("GoogleAdsService", customer_id=clean_customer_id)
 
-    query_parts = [f"SELECT {','.join(fields)} FROM {resource}"]
+    # GAQL rule: When filtering by certain parent fields (like campaign.status in campaign_asset),
+    # the field must be present in the SELECT clause to prevent API rejection.
+    clean_fields = list(fields)
+    if conditions:
+        for cond in conditions:
+            if "campaign.status" in cond and "campaign.status" not in clean_fields:
+                clean_fields.append("campaign.status")
+
+    query_parts = [f"SELECT {','.join(clean_fields)} FROM {resource}"]
 
     if conditions:
         query_parts.append(f" WHERE {' AND '.join(conditions)}")
