@@ -640,7 +640,7 @@ def create_business_message_asset(
     Args:
         customer_id: The Google Ads customer ID.
         name: A descriptive name for the message asset.
-        whatsapp_phone_number: The WhatsApp phone number (e.g. '+5516997164515' or '(16) 99716-4515').
+        whatsapp_phone_number: The WhatsApp phone number (e.g. '+5511999999999' or '(11) 99999-9999').
         country_code: Two-letter ISO country code (e.g. 'BR', 'US'). Default is 'BR'.
         starter_message: Optional pre-filled starter message sent when user clicks to chat.
         call_to_action: Optional call to action text shown alongside the message button (e.g. 'Fale Conosco').
