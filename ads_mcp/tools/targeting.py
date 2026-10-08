@@ -842,10 +842,10 @@ def add_campaign_audience_criterion(
     clean_c_id = str(campaign_id).replace("-", "").strip().removeprefix(f"customers/{cid}/campaigns/")
     campaign_rn = f"customers/{cid}/campaigns/{clean_c_id}"
 
-    if not user_interest_id and not user_list_id:
-        raise ValueError("Must specify either user_interest_id or user_list_id.")
-
     try:
+        if not user_interest_id and not user_list_id:
+            raise ValueError("Must specify either user_interest_id or user_list_id.")
+
         service = utils.get_googleads_service("CampaignCriterionService", customer_id=cid)
         op = utils.get_googleads_type("CampaignCriterionOperation", customer_id=cid)
 

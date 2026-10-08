@@ -49,7 +49,7 @@ def search(
     # GAQL rule: When filtering by certain parent fields (like campaign.status in campaign_asset),
     # the field must be present in the SELECT clause to prevent API rejection.
     clean_fields = list(fields)
-    if conditions:
+    if resource != "campaign" and conditions:
         for cond in conditions:
             if "campaign.status" in cond and "campaign.status" not in clean_fields:
                 clean_fields.append("campaign.status")

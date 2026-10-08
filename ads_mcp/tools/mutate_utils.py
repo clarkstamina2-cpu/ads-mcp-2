@@ -76,9 +76,22 @@ def handle_googleads_exception(ex: Exception) -> ToolError:
     if isinstance(ex, GoogleAdsException):
         error_lines = []
         for i, error in enumerate(ex.failure.errors, 1):
-            msg = error.message
-            code = getattr(error.error_code, error.error_code._pb.WhichOneof("error_code") or "", "")
-            trigger = error.trigger.string_value if hasattr(error.trigger, "string_value") and error.trigger.string_value else ""
+            msg = getattr(error, "message", str(error))
+            code = ""
+            try:
+                if hasattr(error, "error_code") and hasattr(error.error_code, "_pb"):
+                    which = error.error_code._pb.WhichOneof("error_code")
+                    if isinstance(which, str) and which:
+                        code = getattr(error.error_code, which, "")
+            except Exception:
+                code = ""
+
+            trigger = ""
+            try:
+                if hasattr(error, "trigger") and hasattr(error.trigger, "string_value"):
+                    trigger = str(error.trigger.string_value)
+            except Exception:
+                trigger = ""
             
             field_path = ""
             if error.location and error.location.field_path_elements:

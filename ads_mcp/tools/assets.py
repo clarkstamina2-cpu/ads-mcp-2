@@ -1596,19 +1596,18 @@ def create_youtube_video_asset(
     """
     cid = clean_customer_id(customer_id)
 
-    # Extract 11-char video ID from URL or raw string
-    raw_val = str(youtube_video_id_or_url).strip()
-    if "v=" in raw_val:
-        yt_id = raw_val.split("v=")[-1].split("&")[0][:11]
-    elif "youtu.be/" in raw_val:
-        yt_id = raw_val.split("youtu.be/")[-1].split("?")[0][:11]
-    else:
-        yt_id = raw_val[:11]
-
-    if len(yt_id) < 11:
-        raise ValueError(f"Invalid YouTube video ID '{raw_val}'. Must be an 11-character video ID or valid YouTube URL.")
-
     try:
+        # Extract 11-char video ID from URL or raw string
+        raw_val = str(youtube_video_id_or_url).strip()
+        if "v=" in raw_val:
+            yt_id = raw_val.split("v=")[-1].split("&")[0][:11]
+        elif "youtu.be/" in raw_val:
+            yt_id = raw_val.split("youtu.be/")[-1].split("?")[0][:11]
+        else:
+            yt_id = raw_val[:11]
+
+        if len(yt_id) < 11:
+            raise ValueError(f"Invalid YouTube video ID '{raw_val}'. Must be an 11-character video ID or valid YouTube URL.")
         service = utils.get_googleads_service("AssetService", customer_id=cid)
         op = utils.get_googleads_type("AssetOperation", customer_id=cid)
 

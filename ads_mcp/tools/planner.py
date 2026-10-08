@@ -15,6 +15,7 @@
 """Tools for Keyword Planning and Research using the Google Ads Keyword Planner API."""
 
 from typing import Any, Dict, List, Optional, Union
+from fastmcp.exceptions import ToolError
 from ads_mcp.coordinator import mcp
 import ads_mcp.utils as utils
 from ads_mcp.tools.mutate_utils import (
@@ -132,9 +133,14 @@ def generate_keyword_ideas(
             "ideas": ideas,
         }
     except Exception as ex:
-        err_str = str(ex).lower()
-        if "explorer access" in err_str or "not allowed for use with explorer access" in err_str:
-            from fastmcp.exceptions import ToolError
+        err_msgs = []
+        if hasattr(ex, "failure") and hasattr(ex.failure, "errors"):
+            for e in ex.failure.errors:
+                err_msgs.append(getattr(e, "message", str(e)))
+        err_msgs.append(str(ex))
+        full_err_text = " ".join(err_msgs).lower()
+
+        if "explorer access" in full_err_text or "not approved for this service" in full_err_text or "keywordplanideaservice" in full_err_text:
             raise ToolError(
                 "Google Ads API Limitation: O método 'generate_keyword_ideas' (Keyword Planner) requer Developer Token "
                 "com nível de acesso 'Basic' ou 'Standard'. O token atual possui 'Explorer Access', que restringe o uso da "
