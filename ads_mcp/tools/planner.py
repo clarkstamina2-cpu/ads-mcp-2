@@ -132,4 +132,13 @@ def generate_keyword_ideas(
             "ideas": ideas,
         }
     except Exception as ex:
+        err_str = str(ex).lower()
+        if "explorer access" in err_str or "not allowed for use with explorer access" in err_str:
+            from fastmcp.exceptions import ToolError
+            raise ToolError(
+                "Google Ads API Limitation: O método 'generate_keyword_ideas' (Keyword Planner) requer Developer Token "
+                "com nível de acesso 'Basic' ou 'Standard'. O token atual possui 'Explorer Access', que restringe o uso da "
+                "KeywordPlanIdeaService. Para liberar este recurso, solicite a elevação do token no Google Ads API Center "
+                "(https://ads.google.com/aw/apicenter)."
+            ) from ex
         raise handle_googleads_exception(ex)

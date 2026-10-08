@@ -1284,3 +1284,376 @@ def update_asset(
         raise handle_googleads_exception(ex)
 
 
+@mcp.tool()
+def add_asset_group_signals(
+    customer_id: str,
+    asset_group_id: Union[str, int],
+    search_themes: Optional[List[str]] = None,
+    audience_ids: Optional[List[Union[str, int]]] = None,
+    validate_only: bool = False,
+) -> Dict[str, Any]:
+    """Adds audience and/or search theme signals to a Performance Max Asset Group.
+
+    Helps Performance Max optimize toward specific search topics (e.g. 'óculos de proteção')
+    and high-converting audiences (customer lists, website visitors).
+
+    Args:
+        customer_id: The Google Ads customer ID.
+        asset_group_id: The asset group ID or resource name ('customers/.../assetGroups/...').
+        search_themes: Optional list of search theme keywords.
+        audience_ids: Optional list of audience IDs (e.g. [240, 6400] or resource names).
+        validate_only: If True, only validates without applying.
+
+    Returns:
+        Dict with success status and created signal resource names.
+    """
+    cid = clean_customer_id(customer_id)
+    clean_ag_id = str(asset_group_id).replace("-", "").strip().removeprefix(f"customers/{cid}/assetGroups/")
+    asset_group_rn = f"customers/{cid}/assetGroups/{clean_ag_id}"
+
+    if not search_themes and not audience_ids:
+        raise ValueError("Must provide at least one search_theme or audience_id.")
+
+    try:
+        service = utils.get_googleads_service("AssetGroupSignalService", customer_id=cid)
+        operations = []
+
+        if search_themes:
+            for st in search_themes:
+                clean_st = str(st).strip()
+                if not clean_st:
+                    continue
+                op = utils.get_googleads_type("AssetGroupSignalOperation", customer_id=cid)
+                sig = op.create
+                sig.asset_group = asset_group_rn
+                sig.search_theme.text = clean_st
+                operations.append(op)
+
+        if audience_ids:
+            for aud in audience_ids:
+                clean_aud = str(aud).replace("-", "").strip().removeprefix(f"customers/{cid}/audiences/")
+                op = utils.get_googleads_type("AssetGroupSignalOperation", customer_id=cid)
+                sig = op.create
+                sig.asset_group = asset_group_rn
+                sig.audience.audience = f"customers/{cid}/audiences/{clean_aud}"
+                operations.append(op)
+
+        if not operations:
+            raise ValueError("No valid signals to add.")
+
+        if validate_only:
+            response = service.mutate_asset_group_signals(
+                request={
+                    "customer_id": cid,
+                    "operations": operations,
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = service.mutate_asset_group_signals(
+                customer_id=cid,
+                operations=operations,
+            )
+
+        results = response.results if not validate_only else [{"resource_name": f"customers/{cid}/assetGroupSignals/dry-run"} for _ in operations]
+        return format_mutate_response(
+            action="add_asset_group_signals",
+            results=results,
+            validate_only=validate_only,
+            extra={
+                "customer_id": cid,
+                "asset_group": asset_group_rn,
+                "search_themes": search_themes or [],
+                "audience_ids": [str(a) for a in (audience_ids or [])],
+            },
+        )
+    except Exception as ex:
+        raise handle_googleads_exception(ex)
+
+
+@mcp.tool()
+def remove_asset_group_signal(
+    customer_id: str,
+    asset_group_id: Union[str, int],
+    criterion_id: Union[str, int],
+    validate_only: bool = False,
+) -> Dict[str, Any]:
+    """Removes a search theme or audience signal from a Performance Max Asset Group.
+
+    Args:
+        customer_id: The Google Ads customer ID.
+        asset_group_id: The asset group ID.
+        criterion_id: The signal criterion ID (from asset_group_signal.criterion_id or the full resource ID).
+        validate_only: If True, only validates without applying.
+
+    Returns:
+        Dict with success status and removed signal resource name.
+    """
+    cid = clean_customer_id(customer_id)
+    clean_ag_id = str(asset_group_id).replace("-", "").strip().removeprefix(f"customers/{cid}/assetGroups/")
+    clean_crit_id = str(criterion_id).replace("-", "").strip()
+    if "~" in clean_crit_id:
+        clean_crit_id = clean_crit_id.split("~")[-1]
+
+    signal_rn = f"customers/{cid}/assetGroupSignals/{clean_ag_id}~{clean_crit_id}"
+
+    try:
+        service = utils.get_googleads_service("AssetGroupSignalService", customer_id=cid)
+        op = utils.get_googleads_type("AssetGroupSignalOperation", customer_id=cid)
+        op.remove = signal_rn
+
+        if validate_only:
+            response = service.mutate_asset_group_signals(
+                request={
+                    "customer_id": cid,
+                    "operations": [op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = service.mutate_asset_group_signals(
+                customer_id=cid,
+                operations=[op],
+            )
+
+        results = response.results if not validate_only else [{"resource_name": signal_rn}]
+        return format_mutate_response(
+            action="remove_asset_group_signal",
+            results=results,
+            validate_only=validate_only,
+            extra={
+                "customer_id": cid,
+                "asset_group_id": clean_ag_id,
+                "criterion_id": clean_crit_id,
+                "removed_resource": signal_rn,
+            },
+        )
+    except Exception as ex:
+        raise handle_googleads_exception(ex)
+
+
+@mcp.tool()
+def link_asset_to_asset_group(
+    customer_id: str,
+    asset_group_id: Union[str, int],
+    asset_id_or_resource_name: Union[str, int],
+    field_type: str,
+    validate_only: bool = False,
+) -> Dict[str, Any]:
+    """Links an asset (text headline, description, image, logo, or YouTube video) to a Performance Max Asset Group.
+
+    Args:
+        customer_id: The Google Ads customer ID.
+        asset_group_id: The asset group ID or resource name.
+        asset_id_or_resource_name: The asset ID or resource name ('customers/.../assets/...').
+        field_type: The AssetFieldType (e.g. 'HEADLINE', 'LONG_HEADLINE', 'DESCRIPTION', 'BUSINESS_NAME', 'MARKETING_IMAGE', 'SQUARE_MARKETING_IMAGE', 'PORTRAIT_MARKETING_IMAGE', 'LOGO', 'LANDSCAPE_LOGO', 'YOUTUBE_VIDEO', 'CALL_TO_ACTION_SELECTION').
+        validate_only: If True, only validates without applying.
+
+    Returns:
+        Dict with success status and created asset group asset resource name.
+    """
+    cid = clean_customer_id(customer_id)
+    clean_ag_id = str(asset_group_id).replace("-", "").strip().removeprefix(f"customers/{cid}/assetGroups/")
+    asset_group_rn = f"customers/{cid}/assetGroups/{clean_ag_id}"
+
+    clean_asset = str(asset_id_or_resource_name).strip()
+    if clean_asset.startswith("customers/"):
+        asset_rn = clean_asset
+    else:
+        asset_rn = f"customers/{cid}/assets/{clean_asset}"
+
+    try:
+        service = utils.get_googleads_service("AssetGroupAssetService", customer_id=cid)
+        client = utils.get_googleads_client(login_customer_id=utils.get_login_customer_id_for_customer(cid))
+        op = utils.get_googleads_type("AssetGroupAssetOperation", customer_id=cid)
+
+        aga = op.create
+        aga.asset_group = asset_group_rn
+        aga.asset = asset_rn
+
+        ft_clean = field_type.upper().strip()
+        field_type_enum = getattr(
+            get_enum_class(client, "AssetFieldTypeEnum"),
+            ft_clean,
+            None,
+        )
+        if not field_type_enum:
+            raise ValueError(f"Invalid field_type: '{field_type}'.")
+        aga.field_type = field_type_enum
+
+        if validate_only:
+            response = service.mutate_asset_group_assets(
+                request={
+                    "customer_id": cid,
+                    "operations": [op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = service.mutate_asset_group_assets(
+                customer_id=cid,
+                operations=[op],
+            )
+
+        results = response.results if not validate_only else [{"resource_name": f"{asset_group_rn}~{asset_rn}~{ft_clean}"}]
+        return format_mutate_response(
+            action="link_asset_to_asset_group",
+            results=results,
+            validate_only=validate_only,
+            extra={
+                "customer_id": cid,
+                "asset_group": asset_group_rn,
+                "asset": asset_rn,
+                "field_type": ft_clean,
+            },
+        )
+    except Exception as ex:
+        raise handle_googleads_exception(ex)
+
+
+@mcp.tool()
+def unlink_asset_from_asset_group(
+    customer_id: str,
+    asset_group_id: Union[str, int],
+    asset_id_or_resource_name: Union[str, int],
+    field_type: str,
+    validate_only: bool = False,
+) -> Dict[str, Any]:
+    """Unlinks/removes an asset from a Performance Max Asset Group.
+
+    Args:
+        customer_id: The Google Ads customer ID.
+        asset_group_id: The asset group ID.
+        asset_id_or_resource_name: The asset ID or resource name.
+        field_type: The AssetFieldType (e.g. 'HEADLINE', 'MARKETING_IMAGE', 'YOUTUBE_VIDEO', etc.).
+        validate_only: If True, only validates without applying.
+
+    Returns:
+        Dict with success status and unlinked resource name.
+    """
+    cid = clean_customer_id(customer_id)
+    clean_ag_id = str(asset_group_id).replace("-", "").strip().removeprefix(f"customers/{cid}/assetGroups/")
+    clean_asset = str(asset_id_or_resource_name).replace("-", "").strip().removeprefix(f"customers/{cid}/assets/")
+    ft_clean = field_type.upper().strip()
+
+    aga_rn = f"customers/{cid}/assetGroupAssets/{clean_ag_id}~{clean_asset}~{ft_clean}"
+
+    try:
+        service = utils.get_googleads_service("AssetGroupAssetService", customer_id=cid)
+        op = utils.get_googleads_type("AssetGroupAssetOperation", customer_id=cid)
+        op.remove = aga_rn
+
+        if validate_only:
+            response = service.mutate_asset_group_assets(
+                request={
+                    "customer_id": cid,
+                    "operations": [op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = service.mutate_asset_group_assets(
+                customer_id=cid,
+                operations=[op],
+            )
+
+        results = response.results if not validate_only else [{"resource_name": aga_rn}]
+        return format_mutate_response(
+            action="unlink_asset_from_asset_group",
+            results=results,
+            validate_only=validate_only,
+            extra={
+                "customer_id": cid,
+                "asset_group_id": clean_ag_id,
+                "asset_id": clean_asset,
+                "field_type": ft_clean,
+                "unlinked_resource": aga_rn,
+            },
+        )
+    except Exception as ex:
+        raise handle_googleads_exception(ex)
+
+
+@mcp.tool()
+def create_youtube_video_asset(
+    customer_id: str,
+    youtube_video_id_or_url: str,
+    asset_name: Optional[str] = None,
+    asset_group_id: Optional[Union[str, int]] = None,
+    validate_only: bool = False,
+) -> Dict[str, Any]:
+    """Creates a YouTube Video asset in Google Ads and optionally links it to an Asset Group.
+
+    Args:
+        customer_id: The Google Ads customer ID.
+        youtube_video_id_or_url: 11-character YouTube video ID (e.g. 'dQw4w9WgXcQ') or full YouTube URL (e.g. 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' or 'https://youtu.be/dQw4w9WgXcQ').
+        asset_name: Optional name for the video asset.
+        asset_group_id: Optional Asset Group ID to immediately attach this video to as YOUTUBE_VIDEO.
+        validate_only: If True, only validates without applying.
+
+    Returns:
+        Dict with success status and created asset resource name.
+    """
+    cid = clean_customer_id(customer_id)
+
+    # Extract 11-char video ID from URL or raw string
+    raw_val = str(youtube_video_id_or_url).strip()
+    if "v=" in raw_val:
+        yt_id = raw_val.split("v=")[-1].split("&")[0][:11]
+    elif "youtu.be/" in raw_val:
+        yt_id = raw_val.split("youtu.be/")[-1].split("?")[0][:11]
+    else:
+        yt_id = raw_val[:11]
+
+    if len(yt_id) < 11:
+        raise ValueError(f"Invalid YouTube video ID '{raw_val}'. Must be an 11-character video ID or valid YouTube URL.")
+
+    try:
+        service = utils.get_googleads_service("AssetService", customer_id=cid)
+        op = utils.get_googleads_type("AssetOperation", customer_id=cid)
+
+        asset = op.create
+        asset.name = asset_name or f"YouTube Video {yt_id}"
+        asset.youtube_video_asset.youtube_video_id = yt_id
+
+        if validate_only:
+            response = service.mutate_assets(
+                request={
+                    "customer_id": cid,
+                    "operations": [op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = service.mutate_assets(
+                customer_id=cid,
+                operations=[op],
+            )
+
+        asset_rn = response.results[0].resource_name if not validate_only else f"customers/{cid}/assets/dry-run"
+
+        link_res = None
+        if asset_group_id and not validate_only:
+            link_res = link_asset_to_asset_group(
+                customer_id=cid,
+                asset_group_id=asset_group_id,
+                asset_id_or_resource_name=asset_rn,
+                field_type="YOUTUBE_VIDEO",
+            )
+
+        return format_mutate_response(
+            action="create_youtube_video_asset",
+            results=response.results if not validate_only else [{"resource_name": asset_rn}],
+            validate_only=validate_only,
+            extra={
+                "customer_id": cid,
+                "youtube_video_id": yt_id,
+                "asset_resource_name": asset_rn,
+                "linked_to_asset_group": link_res,
+            },
+        )
+    except Exception as ex:
+        raise handle_googleads_exception(ex)
+
+
+

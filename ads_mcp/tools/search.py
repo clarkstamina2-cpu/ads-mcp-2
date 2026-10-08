@@ -136,6 +136,13 @@ def _search_tool_description() -> str:
     Do not guess the fields. Use the tool to look them up.
     Once you have the fields, ensure the whole field name is used (e.g., 'campaign.id', not just 'id'). Wildcards and partial fields are not allowed.
 
+### Important GAQL Enum & Field Caveats:
+    - change_event: `change_event.change_resource_type` only accepts: AD, AD_GROUP, AD_GROUP_AD, AD_GROUP_CRITERION, ASSET, ASSET_SET, CAMPAIGN, CAMPAIGN_BUDGET, CAMPAIGN_CRITERION, CUSTOMER_ASSET, FEED, FEED_ITEM. (Do NOT use 'ASSET_GROUP' or 'ASSET_GROUP_ASSET').
+    - asset_group_asset: `performance_label` was deprecated and removed by Google. To analyze asset performance in PMax, select metrics (`metrics.impressions`, `metrics.clicks`, `metrics.conversions`, `metrics.cost_micros`) and `asset_group_asset.primary_status`.
+    - campaign: `campaign.url_expansion_opt_out` was removed by Google. URL expansion in PMax is managed via `campaign.asset_automation_settings`.
+    - campaign dates: In modern API, use `campaign.start_date_time` and `campaign.end_date_time` (e.g. 'YYYY-MM-DD HH:MM:SS').
+    - campaign_asset.field_type: For messaging, the valid enum is `BUSINESS_MESSAGE` (never 'MESSAGE').
+
 ### Valid resources
     What follows is a list of valid resources that can be queried.
     {file_content}

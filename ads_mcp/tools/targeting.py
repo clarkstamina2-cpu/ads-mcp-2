@@ -572,3 +572,326 @@ def add_campaign_languages(
     except Exception as ex:
         raise handle_googleads_exception(ex)
 
+
+@mcp.tool()
+def update_campaign_criterion_bid_modifier(
+    customer_id: str,
+    campaign_id: Union[str, int],
+    criterion_id: Union[str, int],
+    bid_modifier: float,
+    validate_only: bool = False,
+) -> Dict[str, Any]:
+    """Updates the bid modifier on an existing campaign criterion (e.g. location/city or device).
+
+    Avoids duplicate criterion errors when adjusting bid modifiers on locations already added.
+
+    Args:
+        customer_id: The Google Ads customer ID.
+        campaign_id: The campaign ID.
+        criterion_id: The criterion ID (e.g. 20088 for Bahia, or the full resource ID).
+        bid_modifier: The new bid modifier (e.g. 0.7 for -30%, 1.2 for +20%, 1.0 for neutral).
+        validate_only: If True, only validates without applying.
+
+    Returns:
+        Dict with success status and updated criterion details.
+    """
+    cid = clean_customer_id(customer_id)
+    clean_c_id = str(campaign_id).replace("-", "").strip().removeprefix(f"customers/{cid}/campaigns/")
+    clean_crit_id = str(criterion_id).replace("-", "").strip()
+    if "~" in clean_crit_id:
+        clean_crit_id = clean_crit_id.split("~")[-1]
+
+    criterion_rn = f"customers/{cid}/campaignCriteria/{clean_c_id}~{clean_crit_id}"
+
+    try:
+        campaign_criterion_service = utils.get_googleads_service("CampaignCriterionService", customer_id=cid)
+        op = utils.get_googleads_type("CampaignCriterionOperation", customer_id=cid)
+
+        criterion = op.update
+        criterion.resource_name = criterion_rn
+        criterion.bid_modifier = float(bid_modifier)
+        op.update_mask.paths.append("bid_modifier")
+
+        if validate_only:
+            response = campaign_criterion_service.mutate_campaign_criteria(
+                request={
+                    "customer_id": cid,
+                    "operations": [op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = campaign_criterion_service.mutate_campaign_criteria(
+                customer_id=cid,
+                operations=[op],
+            )
+
+        results = response.results if not validate_only else [{"resource_name": criterion_rn}]
+        return format_mutate_response(
+            action="update_campaign_criterion_bid_modifier",
+            results=results,
+            validate_only=validate_only,
+            extra={
+                "customer_id": cid,
+                "campaign_id": clean_c_id,
+                "criterion_id": clean_crit_id,
+                "new_bid_modifier": float(bid_modifier),
+            },
+        )
+    except Exception as ex:
+        raise handle_googleads_exception(ex)
+
+
+@mcp.tool()
+def add_placement_exclusion(
+    customer_id: str,
+    placement_urls: List[str],
+    campaign_id: Optional[Union[str, int]] = None,
+    validate_only: bool = False,
+) -> Dict[str, Any]:
+    """Excludes specific placements (websites like 'glance.com', mobile apps, or YouTube channels).
+
+    Can be applied at campaign level (preferred for PMax/Search) or customer account level.
+
+    Args:
+        customer_id: The Google Ads customer ID.
+        placement_urls: List of placement URLs, app package names, or YouTube channels to exclude (e.g. ['glance.com', 'youtube.com/channel/...']).
+        campaign_id: Optional campaign ID to exclude on a specific campaign. If omitted, excludes at customer account level.
+        validate_only: If True, only validates without applying.
+
+    Returns:
+        Dict with success status and created negative placement criteria.
+    """
+    cid = clean_customer_id(customer_id)
+
+    try:
+        if campaign_id:
+            clean_c_id = str(campaign_id).replace("-", "").strip().removeprefix(f"customers/{cid}/campaigns/")
+            campaign_rn = f"customers/{cid}/campaigns/{clean_c_id}"
+            service = utils.get_googleads_service("CampaignCriterionService", customer_id=cid)
+            operations = []
+
+            for url in placement_urls:
+                clean_url = str(url).strip()
+                op = utils.get_googleads_type("CampaignCriterionOperation", customer_id=cid)
+                crit = op.create
+                crit.campaign = campaign_rn
+                crit.negative = True
+                crit.placement.url = clean_url
+                operations.append(op)
+
+            if validate_only:
+                response = service.mutate_campaign_criteria(
+                    request={
+                        "customer_id": cid,
+                        "operations": operations,
+                        "validate_only": True,
+                    }
+                )
+            else:
+                response = service.mutate_campaign_criteria(
+                    customer_id=cid,
+                    operations=operations,
+                )
+        else:
+            service = utils.get_googleads_service("CustomerNegativeCriterionService", customer_id=cid)
+            operations = []
+
+            for url in placement_urls:
+                clean_url = str(url).strip()
+                op = utils.get_googleads_type("CustomerNegativeCriterionOperation", customer_id=cid)
+                crit = op.create
+                crit.placement.url = clean_url
+                operations.append(op)
+
+            if validate_only:
+                response = service.mutate_customer_negative_criteria(
+                    request={
+                        "customer_id": cid,
+                        "operations": operations,
+                        "validate_only": True,
+                    }
+                )
+            else:
+                response = service.mutate_customer_negative_criteria(
+                    customer_id=cid,
+                    operations=operations,
+                )
+
+        results = response.results if not validate_only else [{"resource_name": f"customers/{cid}/negativePlacements/dry-run"} for _ in placement_urls]
+        return format_mutate_response(
+            action="add_placement_exclusion",
+            results=results,
+            validate_only=validate_only,
+            extra={
+                "customer_id": cid,
+                "campaign_id": campaign_id,
+                "placements_excluded": [str(u) for u in placement_urls],
+            },
+        )
+    except Exception as ex:
+        raise handle_googleads_exception(ex)
+
+
+@mcp.tool()
+def add_ad_group_demographic_exclusion(
+    customer_id: str,
+    ad_group_id: Union[str, int],
+    demographic_type: str,
+    value: str,
+    validate_only: bool = False,
+) -> Dict[str, Any]:
+    """Excludes a demographic segment (gender, age range, parental status) at the Ad Group level.
+
+    Args:
+        customer_id: The Google Ads customer ID.
+        ad_group_id: The ad group ID or resource name.
+        demographic_type: 'GENDER', 'AGE_RANGE', 'PARENTAL_STATUS', or 'INCOME_RANGE'.
+        value: The enum value to exclude:
+               - For GENDER: 'MALE', 'FEMALE', 'UNDETERMINED'
+               - For AGE_RANGE: 'AGE_RANGE_18_24', 'AGE_RANGE_25_34', 'AGE_RANGE_35_44', 'AGE_RANGE_45_54', 'AGE_RANGE_55_64', 'AGE_RANGE_65_UP', 'AGE_RANGE_UNDETERMINED'
+               - For PARENTAL_STATUS: 'PARENT', 'NOT_A_PARENT', 'UNDETERMINED'
+               - For INCOME_RANGE: 'INCOME_RANGE_0_50', 'INCOME_RANGE_50_60', 'INCOME_RANGE_60_70', 'INCOME_RANGE_70_80', 'INCOME_RANGE_80_90', 'INCOME_RANGE_90_UP', 'INCOME_RANGE_UNDETERMINED'
+        validate_only: If True, only validates without applying.
+
+    Returns:
+        Dict with success status and created negative demographic criterion.
+    """
+    cid = clean_customer_id(customer_id)
+    clean_ag_id = str(ad_group_id).replace("-", "").strip().removeprefix(f"customers/{cid}/adGroups/")
+    ad_group_rn = f"customers/{cid}/adGroups/{clean_ag_id}"
+
+    try:
+        service = utils.get_googleads_service("AdGroupCriterionService", customer_id=cid)
+        client = utils.get_googleads_client(login_customer_id=utils.get_login_customer_id_for_customer(cid))
+        op = utils.get_googleads_type("AdGroupCriterionOperation", customer_id=cid)
+
+        crit = op.create
+        crit.ad_group = ad_group_rn
+        crit.negative = True
+
+        dt_upper = demographic_type.upper().strip()
+        val_upper = value.upper().strip()
+
+        if dt_upper == "GENDER":
+            crit.gender.type = get_enum_value(client, "GenderTypeEnum", val_upper)
+        elif dt_upper == "AGE_RANGE":
+            crit.age_range.type = get_enum_value(client, "AgeRangeTypeEnum", val_upper)
+        elif dt_upper == "PARENTAL_STATUS":
+            crit.parental_status.type = get_enum_value(client, "ParentalStatusTypeEnum", val_upper)
+        elif dt_upper == "INCOME_RANGE":
+            crit.income_range.type = get_enum_value(client, "IncomeRangeTypeEnum", val_upper)
+        else:
+            raise ValueError(f"Invalid demographic_type: '{demographic_type}'. Must be GENDER, AGE_RANGE, PARENTAL_STATUS, or INCOME_RANGE.")
+
+        if validate_only:
+            response = service.mutate_ad_group_criteria(
+                request={
+                    "customer_id": cid,
+                    "operations": [op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = service.mutate_ad_group_criteria(
+                customer_id=cid,
+                operations=[op],
+            )
+
+        results = response.results if not validate_only else [{"resource_name": f"customers/{cid}/adGroupCriteria/dry-run"}]
+        return format_mutate_response(
+            action="add_ad_group_demographic_exclusion",
+            results=results,
+            validate_only=validate_only,
+            extra={
+                "customer_id": cid,
+                "ad_group": ad_group_rn,
+                "demographic_type": dt_upper,
+                "value": val_upper,
+            },
+        )
+    except Exception as ex:
+        raise handle_googleads_exception(ex)
+
+
+@mcp.tool()
+def add_campaign_audience_criterion(
+    customer_id: str,
+    campaign_id: Union[str, int],
+    user_interest_id: Optional[Union[int, str]] = None,
+    user_list_id: Optional[Union[int, str]] = None,
+    negative: bool = False,
+    bid_modifier: Optional[float] = None,
+    validate_only: bool = False,
+) -> Dict[str, Any]:
+    """Adds or excludes an audience segment (user interest / in-market or remarketing user list) to a campaign.
+
+    Args:
+        customer_id: The Google Ads customer ID.
+        campaign_id: The campaign ID.
+        user_interest_id: Category ID for User Interest (Affinity or In-Market segment, e.g. 92901 for Shoppers).
+        user_list_id: ID for Remarketing User List (Customer Match or website visitors).
+        negative: If True, excludes this audience from the campaign; if False (default), targets/observes it.
+        bid_modifier: Optional bid modifier (e.g. 1.2 for +20%). Only valid when negative=False.
+        validate_only: If True, only validates without applying.
+
+    Returns:
+        Dict with success status and created audience criterion.
+    """
+    cid = clean_customer_id(customer_id)
+    clean_c_id = str(campaign_id).replace("-", "").strip().removeprefix(f"customers/{cid}/campaigns/")
+    campaign_rn = f"customers/{cid}/campaigns/{clean_c_id}"
+
+    if not user_interest_id and not user_list_id:
+        raise ValueError("Must specify either user_interest_id or user_list_id.")
+
+    try:
+        service = utils.get_googleads_service("CampaignCriterionService", customer_id=cid)
+        op = utils.get_googleads_type("CampaignCriterionOperation", customer_id=cid)
+
+        crit = op.create
+        crit.campaign = campaign_rn
+        crit.negative = negative
+
+        if user_interest_id:
+            clean_ui = str(user_interest_id).strip().removeprefix(f"customers/{cid}/userInterests/")
+            crit.user_interest.user_interest_category = f"customers/{cid}/userInterests/{clean_ui}"
+
+        if user_list_id:
+            clean_ul = str(user_list_id).strip().removeprefix(f"customers/{cid}/userLists/")
+            crit.user_list.user_list = f"customers/{cid}/userLists/{clean_ul}"
+
+        if bid_modifier is not None and not negative:
+            crit.bid_modifier = float(bid_modifier)
+
+        if validate_only:
+            response = service.mutate_campaign_criteria(
+                request={
+                    "customer_id": cid,
+                    "operations": [op],
+                    "validate_only": True,
+                }
+            )
+        else:
+            response = service.mutate_campaign_criteria(
+                customer_id=cid,
+                operations=[op],
+            )
+
+        results = response.results if not validate_only else [{"resource_name": f"customers/{cid}/campaignCriteria/dry-run"}]
+        return format_mutate_response(
+            action="add_campaign_audience_criterion",
+            results=results,
+            validate_only=validate_only,
+            extra={
+                "customer_id": cid,
+                "campaign": campaign_rn,
+                "negative": negative,
+                "user_interest_id": user_interest_id,
+                "user_list_id": user_list_id,
+            },
+        )
+    except Exception as ex:
+        raise handle_googleads_exception(ex)
+
+
