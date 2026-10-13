@@ -55,6 +55,7 @@ async def main():
             "list_recommendation_subscriptions",
             "set_recommendation_subscription_status",
             "resolve_audience_names",
+            "create_conversion_action",
         ):
             assert needed in tools, f"tool ausente: {needed}"
         print(f"OK  token certo -> {len(tools)} tools registradas")
