@@ -4,9 +4,9 @@ version = "0.0.1"
 requires-python = ">=3.10"
 license = "Apache-2.0"
 dependencies = [
-    "google-ads>=31.2.0",
-    "mcp[cli]>=1.2.0",
-    "fastmcp>=3.2.0"
+    "google-ads==33.0.0",
+    "fastmcp==4.1.0",
+    "uvicorn==0.54.0"
 ]
 
 description = "MCP Server for Google Ads, depends on Google Ads API."
@@ -22,7 +22,8 @@ classifiers = [
 [project.optional-dependencies]
 dev = [
     "black",
-    "nox >=2025.5.1, <2026"
+    "nox >=2025.5.1, <2026",
+    "pytest"
 ]
 
 [project.urls]

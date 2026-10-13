@@ -4,6 +4,35 @@ This repo contains the source code for running an
 [MCP](https://modelcontextprotocol.io) server that interacts with the
 [Google Ads API](https://developers.google.com/google-ads/api).
 
+## 🚀 Deploy Stamina (Easypanel) — padrão em uso
+
+Servidor **Streamable HTTP** (`/mcp`) protegido por **token na URL**. Os modos SSE, stdio e login Google do projeto original foram removidos.
+
+**URL para conectar:** `https://<dominio>/mcp?token=<MCP_TOKEN>`
+
+**Variáveis de ambiente (aba Environment do Easypanel).** O servidor **não sobe** se alguma obrigatória faltar:
+
+```env
+MCP_TOKEN=<token forte>            # obrigatório (MCP_AUTH_TOKEN, nome antigo, continua aceito)
+GOOGLE_ADS_DEVELOPER_TOKEN=...     # obrigatório
+GOOGLE_ADS_CLIENT_ID=...           # obrigatório
+GOOGLE_ADS_CLIENT_SECRET=...       # obrigatório
+GOOGLE_ADS_REFRESH_TOKEN=...       # obrigatório
+GOOGLE_ADS_LOGIN_CUSTOMER_ID=...   # opcional (MCC padrão; as demais contas são descobertas sozinhas)
+PORT=8080                          # opcional, padrão 8080
+```
+
+- Sem token ou com token errado: HTTP 401. O token só vale na URL (`?token=`), não em cabeçalho.
+- `/health` é público (para o healthcheck) e não expõe dados. O token nunca é logado.
+- Gerar um token: `python -c "import secrets; print(secrets.token_urlsafe(32))"`
+
+**Testes**
+
+```bash
+python -m pytest tests --ignore=tests/smoke                  # unitários, sem servidor
+MCP_URL=https://<dominio> MCP_TOKEN=xxx python test_server.py # contra o servidor no ar (leituras reais, só leitura)
+```
+
 ## Tools
 
 The server uses the

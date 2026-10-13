@@ -71,11 +71,34 @@ def micros_to_currency(micros: Optional[int]) -> Optional[float]:
     return round(micros / 1_000_000.0, 2)
 
 
+_MUTATE_NOT_ALLOWED_HINT = (
+    "Dica: a API do Google Ads recusou a alteração deste recurso (MUTATE_NOT_ALLOWED). "
+    "Isso costuma acontecer com recursos criados e gerenciados automaticamente pelo Google "
+    "(ex.: conversão 'Android installs (all other apps)'), que só podem ser alterados no painel. "
+    "Não é falha de permissão nem do payload enviado."
+)
+
+
+def _is_mutate_not_allowed(error: Any) -> bool:
+    """True if a GoogleAdsError carries MutateError.MUTATE_NOT_ALLOWED (code 9)."""
+    try:
+        which = error.error_code._pb.WhichOneof("error_code")
+        if which != "mutate_error":
+            return False
+        value = getattr(error.error_code, which)
+        return getattr(value, "name", None) == "MUTATE_NOT_ALLOWED" or int(value) == 9
+    except Exception:
+        return False
+
+
 def handle_googleads_exception(ex: Exception) -> ToolError:
     """Parses GoogleAdsException into a clean, human/LLM-readable ToolError."""
     if isinstance(ex, GoogleAdsException):
         error_lines = []
+        hint_needed = False
         for i, error in enumerate(ex.failure.errors, 1):
+            if _is_mutate_not_allowed(error):
+                hint_needed = True
             msg = getattr(error, "message", str(error))
             code = ""
             try:
@@ -114,6 +137,8 @@ def handle_googleads_exception(ex: Exception) -> ToolError:
             f"Google Ads API Error (Request ID: {ex.request_id}):\n"
             + "\n".join(error_lines)
         )
+        if hint_needed:
+            full_msg += "\n" + _MUTATE_NOT_ALLOWED_HINT
         utils.logger.error(full_msg)
         return ToolError(full_msg)
     
