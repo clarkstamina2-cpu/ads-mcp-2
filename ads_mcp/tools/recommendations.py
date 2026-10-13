@@ -34,11 +34,18 @@ _SUB_FIELDS = [
 _VALID_STATUSES = ("ENABLED", "PAUSED")
 
 
-def type_from_resource_name(resource_name: str) -> str:
-    """The real recommendation type is the last segment of the resource name.
+UNKNOWN_TYPE = "UNKNOWN"
+_UNKNOWN_REASON = (
+    "the API reports this subscription with type UNKNOWN (its resource name is literally '.../UNKNOWN'), "
+    "so it cannot be read or changed through the API; change it in the Google Ads UI "
+    "(Recommendations > Auto-apply)"
+)
 
-    The `type` field comes back as 'UNKNOWN' for types newer than the installed client library,
-    but the resource name always carries the actual type name.
+
+def type_from_resource_name(resource_name: str) -> str:
+    """The recommendation type is the last segment of the resource name (e.g. 'KEYWORD').
+
+    Some subscriptions come back as 'UNKNOWN' (types the API cannot represent); those cannot be mutated.
     """
     return str(resource_name).rsplit("/", 1)[-1].strip()
 
@@ -74,22 +81,34 @@ def list_recommendation_subscriptions(customer_id: str) -> Dict[str, Any]:
     """Lists the recommendation auto-apply subscriptions of an account (which recommendation types Google applies automatically).
 
     A subscription with status ENABLED means Google AUTO-APPLIES that type of recommendation; PAUSED means it does not.
-    The returned 'type' is the real type name (e.g. 'KEYWORD', 'SEARCH_PARTNERS_OPT_IN', 'TARGET_CPA_OPT_IN').
+    The returned 'type' is the type name (e.g. 'KEYWORD', 'SEARCH_PARTNERS_OPT_IN', 'TARGET_CPA_OPT_IN').
+    Subscriptions of type 'UNKNOWN' ('api_manageable': false) are reported by the API but cannot be changed through it;
+    they must be changed in the Google Ads UI.
 
     Args:
         customer_id: The Google Ads customer ID.
 
     Returns:
-        Dict with the subscriptions and how many have auto-apply enabled.
+        Dict with the subscriptions, how many have auto-apply enabled and how many of those cannot be changed via API.
     """
     cid = clean_customer_id(customer_id)
     subs = _read_subscriptions(cid)
-    return {
+    for s in subs:
+        s["api_manageable"] = s["type"].upper() != UNKNOWN_TYPE
+    enabled = [s for s in subs if s["status"] == "ENABLED"]
+    result = {
         "customer_id": cid,
-        "auto_apply_enabled_count": sum(1 for s in subs if s["status"] == "ENABLED"),
+        "auto_apply_enabled_count": len(enabled),
+        "enabled_not_manageable_via_api": sum(1 for s in enabled if not s["api_manageable"]),
         "total": len(subs),
         "subscriptions": subs,
     }
+    if result["enabled_not_manageable_via_api"]:
+        result["note"] = (
+            f"{result['enabled_not_manageable_via_api']} enabled subscription(s) have type UNKNOWN and can only be "
+            "turned off in the Google Ads UI (Recommendations > Auto-apply)."
+        )
+    return result
 
 
 @mcp.tool()
@@ -102,6 +121,8 @@ def set_recommendation_subscription_status(
     """Turns recommendation auto-apply ON (ENABLED) or OFF (PAUSED) for an account, per recommendation type.
 
     Use list_recommendation_subscriptions first to see the current state and the type names.
+    Subscriptions of type 'UNKNOWN' cannot be changed through the API: they are reported in 'skipped' and must be
+    changed in the Google Ads UI. So 'ALL' turns off every API-manageable type, which may not be the whole account.
 
     Args:
         customer_id: The Google Ads customer ID.
@@ -123,8 +144,10 @@ def set_recommendation_subscription_status(
         requested = [t.strip().upper() for t in recommendation_types if t.strip()]
 
     try:
-        existing = {s["type"].upper(): s for s in _read_subscriptions(cid)}
-        wanted = list(existing) if requested is None else requested
+        all_subs = _read_subscriptions(cid)
+        unknown_subs = [s for s in all_subs if s["type"].upper() == UNKNOWN_TYPE]
+        existing = {s["type"].upper(): s for s in all_subs if s["type"].upper() != UNKNOWN_TYPE}
+        wanted = list(existing) if requested is None else [t for t in requested if t != UNKNOWN_TYPE]
 
         client = utils.get_googleads_client(login_customer_id=utils.get_login_customer_id_for_customer(cid))
         status_enum = getattr(get_enum_class(client, "RecommendationSubscriptionStatusEnum"), target)
@@ -155,6 +178,14 @@ def set_recommendation_subscription_status(
                 changed.append({"type": rec_type, "from": "NOT_SUBSCRIBED", "to": target})
             else:
                 skipped.append({"type": rec_type, "reason": "no subscription exists (auto-apply is already off)"})
+
+        # UNKNOWN subscriptions can't be mutated via API: report the ones that are not already in the target state
+        if requested is None or UNKNOWN_TYPE in (requested or []):
+            pending_unknown = [s for s in unknown_subs if s["status"] != target]
+            if pending_unknown:
+                skipped.append(
+                    {"type": UNKNOWN_TYPE, "count": len(pending_unknown), "reason": _UNKNOWN_REASON}
+                )
 
         if operations:
             service = utils.get_googleads_service("RecommendationSubscriptionService", customer_id=cid)

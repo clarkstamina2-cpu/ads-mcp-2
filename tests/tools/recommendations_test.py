@@ -37,6 +37,12 @@ ROWS = [
     _row("NEW_TYPE_FROM_GOOGLE", "ENABLED"),
     _row("TARGET_CPA_OPT_IN", "PAUSED", "TARGET_CPA_OPT_IN"),
 ]
+# Real case seen on a client account: subscriptions whose resource name is literally '.../UNKNOWN'
+ROWS_WITH_UNKNOWN = ROWS + [
+    _row("UNKNOWN", "ENABLED"),
+    _row("UNKNOWN", "ENABLED"),
+    _row("UNKNOWN", "PAUSED"),
+]
 ENUMS = {
     "RecommendationSubscriptionStatusEnum": SimpleNamespace(ENABLED="E", PAUSED="P"),
     "RecommendationTypeEnum": SimpleNamespace(KEYWORD="K", TARGET_CPA_OPT_IN="T"),
@@ -113,6 +119,29 @@ class SetStatusTest(unittest.TestCase):
             rec.set_recommendation_subscription_status("1", "DELETE")
         self.service.mutate_recommendation_subscription.assert_not_called()
 
+    def test_unknown_type_subscriptions_are_skipped_not_sent_to_the_api(self):
+        with mock.patch.object(rec, "search", return_value=ROWS_WITH_UNKNOWN):
+            out = rec.set_recommendation_subscription_status("1", "PAUSED")
+        ops = self.service.mutate_recommendation_subscription.call_args.kwargs["operations"]
+        self.assertEqual(len(ops), 2)  # only KEYWORD and NEW_TYPE_FROM_GOOGLE
+        unknown = [s for s in out["skipped"] if s["type"] == "UNKNOWN"]
+        self.assertEqual(len(unknown), 1)
+        self.assertEqual(unknown[0]["count"], 2)  # the 2 enabled ones; the paused one needs nothing
+        self.assertIn("UI", unknown[0]["reason"])
+
+    def test_asking_for_unknown_explicitly_only_reports_it(self):
+        with mock.patch.object(rec, "search", return_value=ROWS_WITH_UNKNOWN):
+            out = rec.set_recommendation_subscription_status("1", "PAUSED", ["UNKNOWN"])
+        self.service.mutate_recommendation_subscription.assert_not_called()
+        self.assertEqual(out["changed"], [])
+        self.assertEqual(out["skipped"][0]["type"], "UNKNOWN")
+
+    def test_unknown_already_in_target_state_is_not_reported(self):
+        rows = [_row("UNKNOWN", "PAUSED"), _row("KEYWORD", "ENABLED", "KEYWORD")]
+        with mock.patch.object(rec, "search", return_value=rows):
+            out = rec.set_recommendation_subscription_status("1", "PAUSED")
+        self.assertEqual(out["skipped"], [])
+
 
 class ListAndResolveTest(unittest.TestCase):
     def test_list_counts_enabled(self):
@@ -121,6 +150,18 @@ class ListAndResolveTest(unittest.TestCase):
         self.assertEqual(out["auto_apply_enabled_count"], 2)
         self.assertEqual(out["total"], 3)
         self.assertEqual(out["subscriptions"][1]["type"], "NEW_TYPE_FROM_GOOGLE")
+        self.assertEqual(out["enabled_not_manageable_via_api"], 0)
+        self.assertNotIn("note", out)
+
+    def test_list_flags_unknown_subscriptions_as_not_manageable(self):
+        with mock.patch.object(rec, "search", return_value=ROWS_WITH_UNKNOWN):
+            out = rec.list_recommendation_subscriptions("1")
+        self.assertEqual(out["auto_apply_enabled_count"], 4)
+        self.assertEqual(out["enabled_not_manageable_via_api"], 2)
+        self.assertIn("2 enabled", out["note"])
+        flags = {s["type"]: s["api_manageable"] for s in out["subscriptions"]}
+        self.assertFalse(flags["UNKNOWN"])
+        self.assertTrue(flags["KEYWORD"])
 
     def test_resolve_names_merges_sources_and_reports_missing(self):
         def fake_search(customer_id, fields, resource, conditions=None, **_):
