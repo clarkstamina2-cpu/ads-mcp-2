@@ -47,7 +47,15 @@ async def main():
         tools = [t.name for t in await c.list_tools()]
         assert len(tools) >= MIN_TOOLS, f"esperava pelo menos {MIN_TOOLS} tools, vieram {len(tools)}"
         assert len(set(tools)) == len(tools), "há tools duplicadas"
-        for needed in ("list_accessible_customers", "list_client_accounts", "search", "update_conversion_action"):
+        for needed in (
+            "list_accessible_customers",
+            "list_client_accounts",
+            "search",
+            "update_conversion_action",
+            "list_recommendation_subscriptions",
+            "set_recommendation_subscription_status",
+            "resolve_audience_names",
+        ):
             assert needed in tools, f"tool ausente: {needed}"
         print(f"OK  token certo -> {len(tools)} tools registradas")
 
@@ -63,6 +71,17 @@ async def main():
             clients = clients.get("result", clients) if isinstance(clients, dict) else clients
             assert isinstance(clients, list) and clients, "list_client_accounts não retornou contas"
             print(f"OK  list_client_accounts (Google Ads real) -> {len(clients)} conta(s) de cliente")
+
+            names = data_of(await c.call_tool("resolve_audience_names", {"ids": ["uservertical::3", "99999999"]}))
+            assert names["resolved"]["3"][0]["name"], f"resolve_audience_names não traduziu o ID 3: {names}"
+            assert names["not_found"] == ["99999999"], f"ID inexistente deveria vir em not_found: {names}"
+            print(f"OK  resolve_audience_names (Google Ads real) -> uservertical::3 = {names['resolved']['3'][0]['name']}")
+
+            sample = next((x for x in clients if not x.get("is_manager")), None)
+            if sample:
+                subs = data_of(await c.call_tool("list_recommendation_subscriptions", {"customer_id": str(sample["customer_id"])}))
+                assert "subscriptions" in subs and subs["total"] == len(subs["subscriptions"]), subs
+                print(f"OK  list_recommendation_subscriptions (Google Ads real) -> {subs['total']} assinatura(s), {subs['auto_apply_enabled_count']} com auto-aplicar ligado")
 
         try:
             await c.call_tool("update_conversion_action", {"customer_id": "1", "conversion_action_id": "1"})

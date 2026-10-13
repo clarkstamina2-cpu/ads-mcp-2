@@ -45,6 +45,7 @@ from ads_mcp.tools import (
     conversions,
     planner,
     reporting,
+    recommendations,
 )  # noqa: F401
 from ads_mcp.resources import (
     discovery,
