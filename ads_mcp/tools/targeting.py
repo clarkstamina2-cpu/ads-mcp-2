@@ -25,6 +25,9 @@ from ads_mcp.tools.mutate_utils import (
     get_enum_value,
 )
 
+# Fixed Google Ads criterion IDs for the device targeting criteria of a campaign.
+DEVICE_CRITERION_IDS = {"DESKTOP": 30000, "MOBILE": 30001, "TABLET": 30002}
+
 
 @mcp.tool()
 def add_campaign_geo_targets(
@@ -300,33 +303,35 @@ def set_campaign_device_bid_modifiers(
         campaign_rn = f"customers/{cid}/campaigns/{clean_c_id}"
 
     try:
-        bid_modifier_service = utils.get_googleads_service("CampaignBidModifierService", customer_id=cid)
-        client = utils.get_googleads_client(login_customer_id=utils.get_login_customer_id_for_customer(cid))
+        # Device bid adjustments are CAMPAIGN CRITERIA (CampaignCriterion.device + bid_modifier), not
+        # CampaignBidModifier (which has no 'device' field). The device criterion IDs are fixed
+        # (30000 desktop, 30001 mobile, 30002 tablet), so we update the existing criterion's bid_modifier.
+        campaign_criterion_service = utils.get_googleads_service("CampaignCriterionService", customer_id=cid)
+        numeric_campaign_id = campaign_rn.rsplit("/", 1)[-1]
 
         operations = []
-        device_configs = [
+        resource_names = []
+        for device_name, modifier in (
             ("DESKTOP", desktop_modifier),
             ("MOBILE", mobile_modifier),
             ("TABLET", tablet_modifier),
-        ]
-
-        for device_name, modifier in device_configs:
+        ):
             if modifier is None:
                 continue
 
-            op = utils.get_googleads_type("CampaignBidModifierOperation", customer_id=cid)
-            cbm = op.create
-            cbm.campaign = campaign_rn
-            device_enum = getattr(get_enum_class(client, "DeviceEnum"), device_name)
-            cbm.device.type_ = device_enum
-            cbm.bid_modifier = float(modifier)
+            op = utils.get_googleads_type("CampaignCriterionOperation", customer_id=cid)
+            criterion = op.update
+            criterion.resource_name = f"customers/{cid}/campaignCriteria/{numeric_campaign_id}~{DEVICE_CRITERION_IDS[device_name]}"
+            criterion.bid_modifier = float(modifier)
+            op.update_mask.paths.append("bid_modifier")
             operations.append(op)
+            resource_names.append(criterion.resource_name)
 
         if not operations:
             raise ValueError("At least one device modifier (desktop, mobile, or tablet) must be specified.")
 
         if validate_only:
-            response = bid_modifier_service.mutate_campaign_bid_modifiers(
+            response = campaign_criterion_service.mutate_campaign_criteria(
                 request={
                     "customer_id": cid,
                     "operations": operations,
@@ -334,12 +339,12 @@ def set_campaign_device_bid_modifiers(
                 }
             )
         else:
-            response = bid_modifier_service.mutate_campaign_bid_modifiers(
+            response = campaign_criterion_service.mutate_campaign_criteria(
                 customer_id=cid,
                 operations=operations,
             )
 
-        results = response.results if not validate_only else [{"resource_name": f"customers/{cid}/campaignBidModifiers/dry-run"} for _ in operations]
+        results = response.results if not validate_only else [{"resource_name": rn} for rn in resource_names]
         return format_mutate_response(
             action="set_campaign_device_bid_modifiers",
             results=results,

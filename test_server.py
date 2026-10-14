@@ -56,6 +56,10 @@ async def main():
             "set_recommendation_subscription_status",
             "resolve_audience_names",
             "create_conversion_action",
+            "set_campaign_eu_political_advertising",
+            "set_ad_group_demographic_bid_modifier",
+            "diagnose_campaign_serving",
+            "set_campaign_device_bid_modifiers",
         ):
             assert needed in tools, f"tool ausente: {needed}"
         print(f"OK  token certo -> {len(tools)} tools registradas")
