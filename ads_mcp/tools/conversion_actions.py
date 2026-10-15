@@ -70,6 +70,7 @@ def create_conversion_action(
     counting_type: str = "ONE_PER_CLICK",
     primary_for_goal: bool = False,
     click_through_lookback_window_days: int = 30,
+    view_through_lookback_window_days: Optional[int] = None,
     default_value: Optional[float] = None,
     currency_code: str = "BRL",
     always_use_default_value: bool = False,
@@ -90,6 +91,7 @@ def create_conversion_action(
         counting_type: 'ONE_PER_CLICK' (one per ad click, typical for leads) or 'MANY_PER_CLICK' (typical for purchases).
         primary_for_goal: False (default) = secondary; True = primary (used for bidding/optimization).
         click_through_lookback_window_days: Click-through conversion window in days (1 to 90, default 30).
+        view_through_lookback_window_days: Optional view-through conversion window in days (1 to 30). Omit to keep Google's default.
         default_value: Optional default conversion value (e.g. 50.0). Omit for no value.
         currency_code: Currency of the default value (default 'BRL').
         always_use_default_value: If True, always uses default_value instead of the value sent by the tag.
@@ -106,6 +108,8 @@ def create_conversion_action(
         raise ToolError("name is required.")
     if not 1 <= int(click_through_lookback_window_days) <= 90:
         raise ToolError("click_through_lookback_window_days must be between 1 and 90.")
+    if view_through_lookback_window_days is not None and not 1 <= int(view_through_lookback_window_days) <= 30:
+        raise ToolError("view_through_lookback_window_days must be between 1 and 30.")
 
     category_name = str(category).strip().upper()
     category_name = _CATEGORY_ALIASES.get(category_name, category_name)
@@ -123,6 +127,8 @@ def create_conversion_action(
         action.counting_type = _enum_value(client, "ConversionActionCountingTypeEnum", counting_type, "counting_type")
         action.primary_for_goal = bool(primary_for_goal)
         action.click_through_lookback_window_days = int(click_through_lookback_window_days)
+        if view_through_lookback_window_days is not None:
+            action.view_through_lookback_window_days = int(view_through_lookback_window_days)
 
         if default_value is not None:
             action.value_settings.default_value = float(default_value)
@@ -141,6 +147,7 @@ def create_conversion_action(
             "counting_type": str(counting_type).strip().upper(),
             "primary_for_goal": bool(primary_for_goal),
             "click_through_lookback_window_days": int(click_through_lookback_window_days),
+            "view_through_lookback_window_days": view_through_lookback_window_days,
             "default_value": default_value,
             "currency_code": str(currency_code).strip().upper() if default_value is not None else None,
             "attribution_model": attribution_model,

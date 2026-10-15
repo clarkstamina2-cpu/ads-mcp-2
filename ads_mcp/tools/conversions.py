@@ -15,6 +15,7 @@
 """Tools for uploading offline conversions (Click and Call) to Google Ads."""
 
 from typing import Any, Dict, List, Optional, Union
+from fastmcp.exceptions import ToolError
 from ads_mcp.coordinator import mcp
 import ads_mcp.utils as utils
 from ads_mcp.tools.mutate_utils import (
@@ -24,6 +25,16 @@ from ads_mcp.tools.mutate_utils import (
     get_enum_class,
     get_enum_value,
 )
+
+
+def _require_enum(client: Any, enum_name: str, value: str, field: str) -> Any:
+    """Returns the enum member for `value`, or raises a ToolError listing the valid values."""
+    cls = get_enum_class(client, enum_name)
+    member = getattr(cls, str(value).strip().upper(), None) if cls is not None else None
+    if member is None:
+        valid = [m.name for m in cls if m.name not in ("UNSPECIFIED", "UNKNOWN")] if cls is not None else []
+        raise ToolError(f"Invalid {field} '{value}'. Valid values: {', '.join(valid)}.")
+    return member
 
 
 @mcp.tool()
@@ -201,9 +212,19 @@ def update_conversion_action(
     primary_for_goal: Optional[bool] = None,
     status: Optional[str] = None,
     name: Optional[str] = None,
+    click_through_lookback_window_days: Optional[int] = None,
+    view_through_lookback_window_days: Optional[int] = None,
+    counting_type: Optional[str] = None,
+    attribution_model: Optional[str] = None,
+    default_value: Optional[float] = None,
+    always_use_default_value: Optional[bool] = None,
+    default_currency_code: Optional[str] = None,
     validate_only: bool = False,
 ) -> Dict[str, Any]:
-    """Updates a conversion action (e.g. set as primary vs secondary for campaign goals, change status or name).
+    """Updates a conversion action: primary/secondary, status, name, conversion windows, counting, attribution and value rules.
+
+    Only the parameters you pass are changed. Some fields cannot be changed for certain conversion types
+    (for example conversions created and managed by Google); the API error is returned in that case.
 
     Args:
         customer_id: The Google Ads customer ID.
@@ -211,12 +232,25 @@ def update_conversion_action(
         primary_for_goal: If True, marks as primary (used for bidding/optimization); if False, marks as secondary (observation only).
         status: Conversion action status ('ENABLED', 'PAUSED', 'HIDDEN').
         name: Optional new name for the conversion action.
+        click_through_lookback_window_days: Click-through conversion window in days (1 to 90).
+        view_through_lookback_window_days: View-through conversion window in days (1 to 30).
+        counting_type: 'ONE_PER_CLICK' or 'MANY_PER_CLICK'.
+        attribution_model: e.g. 'GOOGLE_ADS_LAST_CLICK', 'GOOGLE_SEARCH_ATTRIBUTION_FIRST_CLICK', 'GOOGLE_SEARCH_ATTRIBUTION_LINEAR',
+                           'GOOGLE_SEARCH_ATTRIBUTION_TIME_DECAY', 'GOOGLE_SEARCH_ATTRIBUTION_POSITION_BASED',
+                           'GOOGLE_SEARCH_ATTRIBUTION_DATA_DRIVEN' (data-driven requires account eligibility).
+        default_value: Default conversion value (e.g. 1.0 or 50.0).
+        always_use_default_value: If True, always uses default_value instead of the value sent by the tag.
+        default_currency_code: Currency of the default value (e.g. 'BRL').
         validate_only: If True, only validates without applying changes.
 
     Returns:
         Dict with success status and updated conversion action details.
     """
     cid = clean_customer_id(customer_id)
+    if click_through_lookback_window_days is not None and not 1 <= int(click_through_lookback_window_days) <= 90:
+        raise ToolError("click_through_lookback_window_days must be between 1 and 90.")
+    if view_through_lookback_window_days is not None and not 1 <= int(view_through_lookback_window_days) <= 30:
+        raise ToolError("view_through_lookback_window_days must be between 1 and 30.")
     clean_id = str(conversion_action_id).replace("-", "").strip()
     if clean_id.startswith("customers/"):
         resource_name = clean_id
@@ -254,8 +288,49 @@ def update_conversion_action(
             op.update_mask.paths.append("name")
             updated["name"] = name.strip()
 
+        if click_through_lookback_window_days is not None:
+            action.click_through_lookback_window_days = int(click_through_lookback_window_days)
+            op.update_mask.paths.append("click_through_lookback_window_days")
+            updated["click_through_lookback_window_days"] = int(click_through_lookback_window_days)
+
+        if view_through_lookback_window_days is not None:
+            action.view_through_lookback_window_days = int(view_through_lookback_window_days)
+            op.update_mask.paths.append("view_through_lookback_window_days")
+            updated["view_through_lookback_window_days"] = int(view_through_lookback_window_days)
+
+        if counting_type is not None:
+            action.counting_type = _require_enum(client, "ConversionActionCountingTypeEnum", counting_type, "counting_type")
+            op.update_mask.paths.append("counting_type")
+            updated["counting_type"] = counting_type.strip().upper()
+
+        if attribution_model is not None:
+            action.attribution_model_settings.attribution_model = _require_enum(
+                client, "AttributionModelEnum", attribution_model, "attribution_model"
+            )
+            op.update_mask.paths.append("attribution_model_settings.attribution_model")
+            updated["attribution_model"] = attribution_model.strip().upper()
+
+        if default_value is not None:
+            action.value_settings.default_value = float(default_value)
+            op.update_mask.paths.append("value_settings.default_value")
+            updated["default_value"] = float(default_value)
+
+        if always_use_default_value is not None:
+            action.value_settings.always_use_default_value = bool(always_use_default_value)
+            op.update_mask.paths.append("value_settings.always_use_default_value")
+            updated["always_use_default_value"] = bool(always_use_default_value)
+
+        if default_currency_code is not None:
+            action.value_settings.default_currency_code = default_currency_code.strip().upper()
+            op.update_mask.paths.append("value_settings.default_currency_code")
+            updated["default_currency_code"] = default_currency_code.strip().upper()
+
         if not op.update_mask.paths:
-            raise ValueError("At least one parameter (primary_for_goal, status, name) must be provided for update.")
+            raise ValueError(
+                "At least one parameter (primary_for_goal, status, name, click_through_lookback_window_days, "
+                "view_through_lookback_window_days, counting_type, attribution_model, default_value, "
+                "always_use_default_value, default_currency_code) must be provided for update."
+            )
 
         if validate_only:
             response = conversion_action_service.mutate_conversion_actions(
@@ -282,6 +357,8 @@ def update_conversion_action(
                 "updated_fields": updated,
             },
         )
+    except ToolError:
+        raise
     except Exception as ex:
         raise handle_googleads_exception(ex)
 

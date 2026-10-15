@@ -149,6 +149,14 @@ class CreateConversionActionTest(unittest.TestCase):
         self.assertEqual(created.value_settings.default_currency_code, "BRL")
         self.assertEqual(created.attribution_model_settings.attribution_model, _Attribution.GOOGLE_ADS_LAST_CLICK)
 
+    def test_view_through_window_is_optional_and_validated(self):
+        ca.create_conversion_action("1", "x", view_through_lookback_window_days=7, validate_only=True)
+        self.assertEqual(self.op.create.view_through_lookback_window_days, 7)
+        with self.assertRaises(ToolError):
+            ca.create_conversion_action("1", "x", view_through_lookback_window_days=31)
+        with self.assertRaises(ToolError):
+            ca.create_conversion_action("1", "x", view_through_lookback_window_days=0)
+
     def test_no_value_settings_when_no_default_value(self):
         self.op.create.value_settings = mock.Mock(spec=["default_value"])
         ca.create_conversion_action("1", "x", validate_only=True)
