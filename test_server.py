@@ -59,6 +59,7 @@ async def main():
             "set_campaign_eu_political_advertising",
             "set_ad_group_demographic_bid_modifier",
             "diagnose_campaign_serving",
+            "update_conversion_goal",
             "set_campaign_device_bid_modifiers",
         ):
             assert needed in tools, f"tool ausente: {needed}"

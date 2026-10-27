@@ -156,6 +156,9 @@ def update_ad_status(
 ) -> Dict[str, Any]:
     """Updates the status of an Ad (PAUSED, ENABLED, or REMOVED).
 
+    REMOVED is sent as a remove operation (the API does not accept REMOVED as a status update)
+    and cannot be undone.
+
     Args:
         customer_id: The Google Ads customer ID.
         ad_group_id: The ad group ID.
@@ -184,10 +187,13 @@ def update_ad_status(
         if not status_enum:
             raise ValueError(f"Invalid ad status: '{status}'. Choose PAUSED, ENABLED, or REMOVED.")
 
-        ad_group_ad = op.update
-        ad_group_ad.resource_name = resource_name
-        ad_group_ad.status = status_enum
-        op.update_mask.paths.append("status")
+        if status.upper() == "REMOVED":
+            op.remove = resource_name
+        else:
+            ad_group_ad = op.update
+            ad_group_ad.resource_name = resource_name
+            ad_group_ad.status = status_enum
+            op.update_mask.paths.append("status")
 
         request = utils.get_googleads_type("MutateAdGroupAdsRequest", customer_id=cid)
         request.customer_id = cid

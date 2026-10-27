@@ -158,5 +158,61 @@ class UpdateConversionActionTest(unittest.TestCase):
         self.service.mutate_conversion_actions.assert_not_called()
 
 
+class _Category(enum.Enum):
+    UNSPECIFIED = 0
+    UNKNOWN = 1
+    DOWNLOAD = 2
+    SUBMIT_LEAD_FORM = 3
+
+
+class _Origin(enum.Enum):
+    UNSPECIFIED = 0
+    UNKNOWN = 1
+    WEBSITE = 2
+    APP = 3
+
+
+GOAL_ENUMS = {"ConversionActionCategoryEnum": _Category, "ConversionOriginEnum": _Origin}
+
+
+class UpdateConversionGoalTest(unittest.TestCase):
+    def setUp(self):
+        self.service = mock.Mock()
+        self.op = mock.MagicMock()
+        self.op.update_mask.paths = []
+        self.get_service = mock.patch.object(conv.utils, "get_googleads_service", return_value=self.service).start()
+        self.get_type = mock.patch.object(conv.utils, "get_googleads_type", return_value=self.op).start()
+        mock.patch.object(conv.utils, "get_googleads_client", return_value=mock.Mock()).start()
+        mock.patch.object(conv.utils, "get_login_customer_id_for_customer", return_value="9").start()
+        mock.patch.object(conv, "get_enum_class", side_effect=lambda client, name: GOAL_ENUMS[name]).start()
+        self.addCleanup(mock.patch.stopall)
+
+    def test_account_goal_uses_customer_conversion_goal(self):
+        out = conv.update_conversion_goal("906-474-8845", "download", "app", biddable=False, validate_only=True)
+        self.assertEqual(self.op.update.resource_name, "customers/9064748845/customerConversionGoals/DOWNLOAD~APP")
+        self.assertFalse(self.op.update.biddable)
+        self.assertEqual(list(self.op.update_mask.paths), ["biddable"])
+        self.get_service.assert_called_with("CustomerConversionGoalService", customer_id="9064748845")
+        request = self.service.mutate_customer_conversion_goals.call_args.kwargs["request"]
+        self.assertTrue(request["validate_only"])
+        self.assertEqual(out["level"], "account")
+
+    def test_campaign_goal_uses_campaign_conversion_goal(self):
+        self.service.mutate_campaign_conversion_goals.return_value = mock.Mock(results=[mock.Mock()])
+        out = conv.update_conversion_goal("1", "SUBMIT_LEAD_FORM", "WEBSITE", biddable=True, campaign_id="777")
+        self.assertEqual(self.op.update.resource_name, "customers/1/campaignConversionGoals/777~SUBMIT_LEAD_FORM~WEBSITE")
+        self.get_type.assert_called_with("CampaignConversionGoalOperation", customer_id="1")
+        self.assertFalse(self.service.mutate_campaign_conversion_goals.call_args.kwargs["request"]["validate_only"])
+        self.assertEqual(out["level"], "campaign")
+
+    def test_invalid_category_or_origin_lists_valid_values(self):
+        with self.assertRaises(ToolError) as ctx:
+            conv.update_conversion_goal("1", "INSTALL", "APP", biddable=False)
+        self.assertIn("DOWNLOAD", str(ctx.exception))
+        with self.assertRaises(ToolError):
+            conv.update_conversion_goal("1", "DOWNLOAD", "PLAY_STORE", biddable=False)
+        self.service.mutate_customer_conversion_goals.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

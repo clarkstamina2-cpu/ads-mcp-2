@@ -225,6 +225,8 @@ def update_conversion_action(
 
     Only the parameters you pass are changed. Some fields cannot be changed for certain conversion types
     (for example conversions created and managed by Google); the API error is returned in that case.
+    Google-managed types such as ANDROID_INSTALLS_ALL_OTHER_APPS reject any mutate (MUTATE_NOT_ALLOWED);
+    to stop them from being used for bidding, use update_conversion_goal on their category and origin.
 
     Args:
         customer_id: The Google Ads customer ID.
@@ -355,6 +357,78 @@ def update_conversion_action(
                 "customer_id": cid,
                 "resource_name": resource_name,
                 "updated_fields": updated,
+            },
+        )
+    except ToolError:
+        raise
+    except Exception as ex:
+        raise handle_googleads_exception(ex)
+
+
+@mcp.tool()
+def update_conversion_goal(
+    customer_id: str,
+    category: str,
+    origin: str,
+    biddable: bool,
+    campaign_id: Optional[Union[str, int]] = None,
+    validate_only: bool = False,
+) -> Dict[str, Any]:
+    """Turns a conversion goal (category + origin) on or off for bidding, for the whole account or one campaign.
+
+    A goal groups every conversion action with the same category and origin (e.g. DOWNLOAD + APP).
+    biddable=False makes the whole goal secondary (observation only). Use this when the conversion action
+    itself cannot be changed (e.g. Google-managed ANDROID_INSTALLS_ALL_OTHER_APPS returns MUTATE_NOT_ALLOWED).
+    Read the current goals with search on customer_conversion_goal or campaign_conversion_goal.
+
+    Args:
+        customer_id: The Google Ads customer ID.
+        category: Conversion category, e.g. 'DOWNLOAD', 'SUBMIT_LEAD_FORM', 'CONTACT', 'PURCHASE', 'PAGE_VIEW'.
+        origin: Conversion origin, e.g. 'WEBSITE', 'APP', 'CALL_FROM_ADS', 'STORE', 'YOUTUBE_HOSTED', 'GOOGLE_HOSTED'.
+        biddable: True uses the goal for bidding (primary); False makes it observation only (secondary).
+        campaign_id: Optional campaign ID. If given, changes only that campaign's goal; otherwise the account default.
+        validate_only: If True, only validates without applying changes.
+
+    Returns:
+        Dict with success status and the updated goal resource name.
+    """
+    cid = clean_customer_id(customer_id)
+    try:
+        client = utils.get_googleads_client(login_customer_id=utils.get_login_customer_id_for_customer(cid))
+        category_name = _require_enum(client, "ConversionActionCategoryEnum", category, "category").name
+        origin_name = _require_enum(client, "ConversionOriginEnum", origin, "origin").name
+
+        if campaign_id is not None:
+            clean_campaign_id = str(campaign_id).replace("-", "").strip().removeprefix(f"customers/{cid}/campaigns/")
+            resource_name = f"customers/{cid}/campaignConversionGoals/{clean_campaign_id}~{category_name}~{origin_name}"
+            service = utils.get_googleads_service("CampaignConversionGoalService", customer_id=cid)
+            op = utils.get_googleads_type("CampaignConversionGoalOperation", customer_id=cid)
+        else:
+            resource_name = f"customers/{cid}/customerConversionGoals/{category_name}~{origin_name}"
+            service = utils.get_googleads_service("CustomerConversionGoalService", customer_id=cid)
+            op = utils.get_googleads_type("CustomerConversionGoalOperation", customer_id=cid)
+
+        goal = op.update
+        goal.resource_name = resource_name
+        goal.biddable = bool(biddable)
+        op.update_mask.paths.append("biddable")
+
+        request = {"customer_id": cid, "operations": [op], "validate_only": validate_only}
+        if campaign_id is not None:
+            response = service.mutate_campaign_conversion_goals(request=request)
+        else:
+            response = service.mutate_customer_conversion_goals(request=request)
+
+        results = response.results if not validate_only else [{"resource_name": resource_name}]
+        return format_mutate_response(
+            action="update_conversion_goal",
+            results=results,
+            validate_only=validate_only,
+            extra={
+                "customer_id": cid,
+                "resource_name": resource_name,
+                "level": "campaign" if campaign_id is not None else "account",
+                "biddable": bool(biddable),
             },
         )
     except ToolError:
